@@ -73,6 +73,11 @@ export class VexFlowMusicSheetDrawer extends MusicSheetDrawer {
             backend.scale(this.zoom);
             //backend.resize(graphicalMusicSheet.ParentMusicSheet.pageWidth * unitInPixels * this.zoom,
             //               EngravingRules.Rules.PageHeight * unitInPixels * this.zoom);
+			if(this.rules.StaffLineColor){
+				const ctx: any = backend.getContext();
+				ctx.setFillStyle(this.rules.StaffLineColor);
+				ctx.setStrokeStyle(this.rules.StaffLineColor);
+			}
             this.pageIdx += 1;
         }
 
