@@ -173,7 +173,7 @@ export class Cursor {
         const diff: number = this.cursorElement.getBoundingClientRect().top;
         this.cursorElement.scrollIntoView({behavior: diff < 1000 ? "smooth" : "auto", block: "center"});
       } else {
-        this.cursorElement.scrollIntoView({behavior: "smooth", inline: "center"});
+        this.cursorElement.scrollIntoView({behavior: "smooth", block: "center", inline: "center"});
       }
     }
     // Show cursor
