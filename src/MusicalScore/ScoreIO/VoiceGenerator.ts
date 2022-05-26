@@ -66,7 +66,7 @@ export class VoiceGenerator {
   // private lastBeamTag: string = "";
   private openBeams: Beam[] = []; // works like a stack, with push and pop
   private beamNumberOffset: number = 0;
-  private openTieDict: { [_: number]: Tie } = {};
+  private get openTieDict(): { [_: number]: Tie } { return this.staff.openTieDict; }
   private currentOctaveShift: number = 0;
   private tupletDict: { [_: number]: Tuplet } = {};
   private openTupletNumber: number = 0;
@@ -117,7 +117,8 @@ export class VoiceGenerator {
               parentStaffEntry: SourceStaffEntry, parentMeasure: SourceMeasure,
               measureStartAbsoluteTimestamp: Fraction, maxTieNoteFraction: Fraction, chord: boolean, octavePlusOne: boolean,
               printObject: boolean, isCueNote: boolean, isGraceNote: boolean, stemDirectionXml: StemDirectionType, tremoloStrokes: number,
-              stemColorXml: string, noteheadColorXml: string, vibratoStrokes: boolean): Note {
+              stemColorXml: string, noteheadColorXml: string, vibratoStrokes: boolean,
+              dotsXml: number): Note {
     this.currentStaffEntry = parentStaffEntry;
     this.currentMeasure = parentMeasure;
     //log.debug("read called:", restNote);
@@ -127,6 +128,7 @@ export class VoiceGenerator {
         ? this.addRestNote(noteNode.element("rest"), noteDuration, noteTypeXml, normalNotes, printObject, isCueNote, noteheadColorXml)
         : this.addSingleNote(noteNode, noteDuration, noteTypeXml, typeDuration, normalNotes, chord, octavePlusOne,
                              printObject, isCueNote, isGraceNote, stemDirectionXml, tremoloStrokes, stemColorXml, noteheadColorXml, vibratoStrokes);
+      this.currentNote.DotsXml = dotsXml;
       // read lyrics
       const lyricElements: IXmlElement[] = noteNode.elements("lyric");
       if (this.lyricsReader !== undefined && lyricElements) {
@@ -220,15 +222,16 @@ export class VoiceGenerator {
         }
 
         // remove open ties, if there is already a gap between the last tie note and now.
-        const openTieDict: { [_: number]: Tie } = this.openTieDict;
-        for (const key in openTieDict) {
-          if (openTieDict.hasOwnProperty(key)) {
-            const tie: Tie = openTieDict[key];
-            if (Fraction.plus(tie.StartNote.ParentStaffEntry.Timestamp, tie.Duration).lt(this.currentStaffEntry.Timestamp)) {
-              delete openTieDict[key];
-            }
-          }
-        }
+        // TODO this deletes valid ties, see #1097
+        // const openTieDict: { [_: number]: Tie } = this.openTieDict;
+        // for (const key in openTieDict) {
+        //   if (openTieDict.hasOwnProperty(key)) {
+        //     const tie: Tie = openTieDict[key];
+        //     if (Fraction.plus(tie.StartNote.ParentStaffEntry.Timestamp, tie.Duration).lt(this.currentStaffEntry.Timestamp)) {
+        //       delete openTieDict[key];
+        //     }
+        //   }
+        // }
       }
       // time-modification yields tuplet in currentNote
       // mustn't execute method, if this is the Note where the Tuplet has been created
@@ -236,10 +239,12 @@ export class VoiceGenerator {
         this.handleTimeModificationNode(noteNode);
       }
     } catch (err) {
+      log.warn(err);
       const errorMsg: string = ITextTranslation.translateText(
         "ReaderErrorMessages/NoteError", "Ignored erroneous Note."
       );
       this.musicSheet.SheetErrors.pushMeasureError(errorMsg);
+      this.musicSheet.SheetErrors.pushMeasureError(err);
     }
 
     return this.currentNote;
@@ -330,6 +335,7 @@ export class VoiceGenerator {
                         stemColorXml: string, noteheadColorXml: string, vibratoStrokes: boolean): Note {
     //log.debug("addSingleNote called");
     let noteAlter: number = 0;
+    let accidentalValue: string;
     let noteAccidental: AccidentalEnum = AccidentalEnum.NONE;
     let noteStep: NoteEnum = NoteEnum.C;
     let displayStepUnpitched: NoteEnum = NoteEnum.C;
@@ -386,9 +392,22 @@ export class VoiceGenerator {
 
           }
         } else if (noteElement.name === "accidental") {
-          const accidentalValue: string = noteElement.value;
+          accidentalValue = noteElement.value;
           if (accidentalValue === "natural") {
             noteAccidental = AccidentalEnum.NATURAL;
+            // following accidentals: ambiguous in alter value
+          } else if (accidentalValue === "slash-flat") {
+            noteAccidental = AccidentalEnum.SLASHFLAT;
+          } else if (accidentalValue === "slash-quarter-sharp") {
+            noteAccidental = AccidentalEnum.SLASHQUARTERSHARP;
+          } else if (accidentalValue === "slash-sharp") {
+            noteAccidental = AccidentalEnum.SLASHSHARP;
+          } else if (accidentalValue === "double-slash-flat") {
+            noteAccidental = AccidentalEnum.DOUBLESLASHFLAT;
+          } else if (accidentalValue === "sori") {
+            noteAccidental = AccidentalEnum.SORI;
+          } else if (accidentalValue === "koron") {
+            noteAccidental = AccidentalEnum.KORON;
           }
         } else if (noteElement.name === "unpitched") {
           const displayStepElement: IXmlElement = noteElement.element("display-step");
@@ -429,7 +448,7 @@ export class VoiceGenerator {
     }
 
     noteOctave -= Pitch.OctaveXmlDifference;
-    const pitch: Pitch = new Pitch(noteStep, noteOctave, noteAccidental);
+    const pitch: Pitch = new Pitch(noteStep, noteOctave, noteAccidental, accidentalValue);
     const noteLength: Fraction = Fraction.createFromFraction(noteDuration);
     let note: Note = undefined;
     let stringNumber: number = -1;
@@ -613,6 +632,11 @@ export class VoiceGenerator {
    */
   private handleOpenBeam(): void {
     const openBeam: Beam = this.openBeams.last();
+    if (openBeam.Notes.length === 0) {
+      // TODO why is there such a beam? sample: test_percussion_display_step_from_xml
+      this.endBeam(); // otherwise beamLastNote.ParentStaffEntry will throw an undefined error
+      return;
+    }
     if (openBeam.Notes.length === 1) {
       const beamNote: Note = openBeam.Notes[0];
       beamNote.NoteBeam = undefined;
@@ -928,25 +952,7 @@ export class VoiceGenerator {
       if (tieNodeList.length === 1) {
         const tieNode: IXmlElement = tieNodeList[0];
         if (tieNode !== undefined && tieNode.attributes()) {
-          let tieDirection: PlacementEnum = PlacementEnum.NotYetDefined;
-          // read tie direction/placement from XML
-          const placementAttr: IXmlAttribute = tieNode.attribute("placement");
-          if (placementAttr) {
-            if (placementAttr.value === "above") {
-              tieDirection = PlacementEnum.Above;
-            } else if (placementAttr.value === "below") {
-              tieDirection = PlacementEnum.Below;
-            }
-          }
-          // tie direction also be given like this:
-          const orientationAttr: IXmlAttribute = tieNode.attribute("orientation");
-          if (orientationAttr) {
-            if (orientationAttr.value === "over") {
-              tieDirection = PlacementEnum.Above;
-            } else if (orientationAttr.value === "under") {
-              tieDirection = PlacementEnum.Below;
-            }
-          }
+          const tieDirection: PlacementEnum = this.getTieDirection(tieNode);
 
           const type: string = tieNode.attribute("type").value;
           try {
@@ -974,14 +980,44 @@ export class VoiceGenerator {
           }
 
         }
-      } else if (tieNodeList.length === 2) {
+      } else if (tieNodeList.length === 2) { // stop+start
         const tieNumber: number = this.findCurrentNoteInTieDict(this.currentNote);
         if (tieNumber >= 0) {
           const tie: Tie = this.openTieDict[tieNumber];
           tie.AddNote(this.currentNote);
+          for (const tieNode of tieNodeList) {
+            const type: string = tieNode.attribute("type").value;
+            if (type === "start") {
+              const placement: PlacementEnum = this.getTieDirection(tieNode);
+              tie.NoteIndexToTieDirection[tie.Notes.length - 1] = placement;
+            }
+          }
         }
       }
     }
+  }
+
+  private getTieDirection(tieNode: IXmlElement): PlacementEnum {
+    let tieDirection: PlacementEnum = PlacementEnum.NotYetDefined;
+    // read tie direction/placement from XML
+    const placementAttr: IXmlAttribute = tieNode.attribute("placement");
+    if (placementAttr) {
+      if (placementAttr.value === "above") {
+        tieDirection = PlacementEnum.Above;
+      } else if (placementAttr.value === "below") {
+        tieDirection = PlacementEnum.Below;
+      }
+    }
+    // tie direction can also be given like this:
+    const orientationAttr: IXmlAttribute = tieNode.attribute("orientation");
+    if (orientationAttr) {
+      if (orientationAttr.value === "over") {
+        tieDirection = PlacementEnum.Above;
+      } else if (orientationAttr.value === "under") {
+        tieDirection = PlacementEnum.Below;
+      }
+    }
+    return tieDirection;
   }
 
   /**

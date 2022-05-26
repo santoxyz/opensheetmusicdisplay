@@ -1,14 +1,14 @@
 import { OpenSheetMusicDisplay } from '../src/OpenSheetMusicDisplay/OpenSheetMusicDisplay';
 import { BackendType } from '../src/OpenSheetMusicDisplay/OSMDOptions';
-import * as jsPDF  from '../node_modules/jspdf-yworks/dist/jspdf.min';
-import * as svg2pdf from '../node_modules/svg2pdf.js/dist/svg2pdf.min';
+import * as jsPDF  from '../node_modules/jspdf/dist/jspdf.es.min';
+import * as svg2pdf from '../node_modules/svg2pdf.js/dist/svg2pdf.umd.min';
 import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculator';
 
 /*jslint browser:true */
 (function () {
     "use strict";
     var openSheetMusicDisplay;
-    var sampleFolder = process.env.STATIC_FILES_SUBFOLDER ? process.env.STATIC_FILES_SUBFOLDER + "/" : "",
+    var sampleFolder = "",
         samples = {
             "Beethoven, L.v. - An die ferne Geliebte": "Beethoven_AnDieFerneGeliebte.xml",
             "Clementi, M. - Sonatina Op.36 No.1 Pt.1": "MuzioClementi_SonatinaOpus36No1_Part1.xml",
@@ -126,9 +126,7 @@ import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculato
     var showHeader = true;
     var showDebugControls = false;
 
-    if (process.env.OSMD_DEMO_TITLE) {
-        document.title = process.env.OSMD_DEMO_TITLE;
-    }
+    document.title = "OpenSheetMusicDisplay Demo";
 
     // Initialization code
     function init() {
@@ -254,11 +252,10 @@ import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculato
 
         //var defaultDisplayVisibleValue = "block"; // TODO in some browsers flow could be the better/default value
         var defaultVisibilityValue = "visible";
-        var devDemoRunning = process.env.OSMD_DEBUG_CONTROLS;
-        showDebugControls = paramDebugControls === '1' || (devDemoRunning && paramDebugControls !== '0')
+        showDebugControls = paramDebugControls !== '0';
         if (showDebugControls) {
             var elementsToEnable = [
-                selectSample, selectBounding, selectPageSize, backendSelect, backendSelectDiv, divControls
+                selectSample, selectBounding, selectPageSizes[0], backendSelect, backendSelectDiv, divControls
             ];
             for (var i=0; i<elementsToEnable.length; i++) {
                 if (elementsToEnable[i]) { // make sure this element is not null/exists in the index.html, e.g. github.io demo has different index.html
@@ -445,7 +442,8 @@ import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculato
             // drawTitle: false,
             // drawSubtitle: false,
             drawFingerings: true,
-            fingeringPosition: "left", // left is default. try right. experimental: auto, above, below.
+            //fingeringPosition: "left", // Above/Below is default. try left or right. experimental: above, below.
+            //fingeringPositionFromXML: false, // do this if you want them always left, for example.
             // fingeringInsideStafflines: "true", // default: false. true draws fingerings directly above/below notes
             setWantedStemDirectionByXml: true, // try false, which was previously the default behavior
             // drawUpToMeasureNumber: 3, // draws only up to measure 3, meaning it draws measure 1 to 3 of the piece.
@@ -476,6 +474,9 @@ import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculato
             // tripletsBracketed: true,
             // tupletsRatioed: true, // unconventional; renders ratios for tuplets (3:2 instead of 3 for triplets)
         });
+        //openSheetMusicDisplay.DrawSkyLine = true;
+        //openSheetMusicDisplay.DrawBottomLine = true;
+        //openSheetMusicDisplay.setDrawBoundingBox("GraphicalLabel", false);
         openSheetMusicDisplay.setLogLevel('info'); // set this to 'debug' if you want to see more detailed control flow information in console
         document.body.appendChild(canvas);
 
@@ -737,7 +738,6 @@ import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculato
 
     function errorLoadingOrRenderingSheet(e, loadingOrRenderingString) {
         var errorString = "Error " + loadingOrRenderingString + " sheet: " + e;
-        // if (process.env.DEBUG) { // people may not set a debug environment variable for the demo.
         // Always giving a StackTrace might give us more and better error reports.
         // TODO for a release, StackTrace control could be reenabled
         errorString += "\n" + "StackTrace: \n" + e.stack;
@@ -828,7 +828,7 @@ import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculato
      * Creates a Pdf of the currently rendered MusicXML
      * @param pdfName if no name is given, the composer and title of the piece will be used
      */
-    function createPdf(pdfName) {
+    async function createPdf(pdfName) {
         if (openSheetMusicDisplay.backendType !== BackendType.SVG) {
             console.log("[OSMD] createPdf(): Warning: createPDF is only supported for SVG background for now, not for Canvas." +
                 " Please use osmd.setOptions({backendType: SVG}).");
@@ -854,24 +854,33 @@ import { TransposeCalculator } from '../src/Plugins/Transpose/TransposeCalculato
 
         const orientation = pageHeight > pageWidth ? "p" : "l";
         // create a new jsPDF instance
-        const pdf = new jsPDF(orientation, "mm", [pageWidth, pageHeight]);
-        const scale = pageWidth / svgElement.clientWidth;
+        const pdf = new jsPDF.jsPDF({
+            orientation: orientation,
+            unit: "mm",
+            format: [pageWidth, pageHeight]
+        });
+        //const scale = pageWidth / svgElement.clientWidth;
         for (let idx = 0, len = backends.length; idx < len; ++idx) {
             if (idx > 0) {
                 pdf.addPage();
             }
             svgElement = backends[idx].getSvgElement();
-
-            // render the svg element
-            svg2pdf(svgElement, pdf, {
-                scale: scale,
-                xOffset: 0,
-                yOffset: 0
-            });
+            
+            if (!pdf.svg && !svg2pdf) { // this line also serves to make the svg2pdf not unused, though it's still necessary
+                // we need svg2pdf to have pdf.svg defined
+                console.log("svg2pdf missing, necessary for jspdf.svg().");
+                return;
+            }
+            await pdf.svg(svgElement, {
+                x: 0,
+                y: 0,
+                width: pageWidth,
+                height: pageHeight,
+            })
         }
 
-        // simply save the created pdf
-        pdf.save(pdfName);
+        pdf.save(pdfName); // save/download the created pdf
+        //pdf.output("pdfobjectnewwindow", {filename: "osmd_createPDF.pdf"}); // open PDF in new tab/window
 
         // note that using jspdf with svg2pdf creates unnecessary console warnings "AcroForm-Classes are not populated into global-namespace..."
         // this will hopefully be fixed with a new jspdf release, see https://github.com/yWorks/jsPDF/pull/32

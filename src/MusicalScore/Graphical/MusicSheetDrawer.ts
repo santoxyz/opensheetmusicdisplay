@@ -25,7 +25,8 @@ import {MusicSymbolDrawingStyle, PhonicScoreModes} from "./DrawingMode";
 import {GraphicalObject} from "./GraphicalObject";
 import { GraphicalInstantaneousDynamicExpression } from "./GraphicalInstantaneousDynamicExpression";
 import { GraphicalContinuousDynamicExpression } from "./GraphicalContinuousDynamicExpression";
-import { VexFlowContinuousDynamicExpression, VexFlowGraphicalNote, VexFlowMeasure, VexFlowStaffEntry, VexFlowStaffLine, VexFlowVoiceEntry } from "./VexFlow";
+// eslint-disable-next-line
+import { VexFlowContinuousDynamicExpression, VexFlowGraphicalNote, VexFlowInstrumentBracket, VexFlowMeasure, VexFlowStaffEntry, VexFlowStaffLine, VexFlowVoiceEntry } from "./VexFlow";
 import { StaffLineActivitySymbol } from "./StaffLineActivitySymbol";
 // import { FontStyles } from "../../Common/Enums/FontStyles";
 
@@ -45,7 +46,7 @@ export abstract class MusicSheetDrawer {
     public drawingParameters: DrawingParameters;
     public splitScreenLineColor: number;
     public midiPlaybackAvailable: boolean;
-    public drawableBoundingBoxElement: string = process.env.DRAW_BOUNDING_BOX_ELEMENT;
+    public drawableBoundingBoxElement: string = "None"; // process.env.DRAW_BOUNDING_BOX_ELEMENT;
 
     public skyLineVisible: boolean = false;
     public bottomLineVisible: boolean = false;
@@ -325,18 +326,34 @@ export abstract class MusicSheetDrawer {
         }
         if (musicSystem.Parent === musicSystem.Parent.Parent.MusicPages[0]) {
             for (const label of musicSystem.Labels) {
-                this.drawLabel(label, <number>GraphicalLayers.Notes);
+                label.SVGNode = this.drawLabel(label, <number>GraphicalLayers.Notes);
             }
         }
+
+        const instruments: Instrument[] = this.graphicalMusicSheet.ParentMusicSheet.Instruments;
+        const instrumentsVisible: number = instruments.filter((instrument) => instrument.Visible).length;
         for (const bracket of musicSystem.InstrumentBrackets) {
             this.drawInstrumentBrace(bracket, musicSystem);
         }
-        for (const bracket of musicSystem.GroupBrackets) {
-            this.drawGroupBracket(bracket, musicSystem);
+
+        if (instruments.length > 0) {
+            // TODO instead of this check we could save what instruments are in the group bracket,
+            //   and only draw it if all these instruments are visible.
+            //   Currently the instruments/stafflines aren't saved in the bracket however.
+            if (instrumentsVisible > 1) {
+                for (const bracket of musicSystem.GroupBrackets) {
+                    this.drawGroupBracket(bracket, musicSystem);
+                }
+            } else {
+                for (const bracket of musicSystem.GroupBrackets) {
+                    (bracket as VexFlowInstrumentBracket).Visible = false; //.setType(VF.StaveConnector.type.NONE);
+                }
+            }
         }
+
         if (!this.leadSheet) {
             for (const measureNumberLabel of musicSystem.MeasureNumberLabels) {
-                this.drawLabel(measureNumberLabel, <number>GraphicalLayers.Notes);
+                measureNumberLabel.SVGNode = this.drawLabel(measureNumberLabel, <number>GraphicalLayers.Notes);
             }
         }
         for (const staffLine of musicSystem.StaffLines) {
@@ -419,7 +436,7 @@ export abstract class MusicSheetDrawer {
      * @param layer Number of the layer that the lyrics should be drawn in
      */
     protected drawDashes(lyricsDashes: GraphicalLabel[]): void {
-        lyricsDashes.forEach(dash => this.drawLabel(dash, <number>GraphicalLayers.Notes));
+        lyricsDashes.forEach(dash => dash.SVGNode = this.drawLabel(dash, <number>GraphicalLayers.Notes));
     }
 
     // protected drawSlur(slur: GraphicalSlur, abs: PointF2D): void {
@@ -489,7 +506,7 @@ export abstract class MusicSheetDrawer {
         }
         if (page === page.Parent.MusicPages[0]) {
             for (const label of page.Labels) {
-                this.drawLabel(label, <number>GraphicalLayers.Notes);
+                label.SVGNode = this.drawLabel(label, <number>GraphicalLayers.Notes);
             }
         }
         // Draw bounding boxes for debug purposes. This has to be at the end because only
@@ -581,13 +598,13 @@ export abstract class MusicSheetDrawer {
                     this.drawRectangle(markedArea.systemRectangle, <number>GraphicalLayers.Background);
                 }
                 if (markedArea.settings) {
-                    this.drawLabel(markedArea.settings, <number>GraphicalLayers.Comment);
+                    markedArea.settings.SVGNode = this.drawLabel(markedArea.settings, <number>GraphicalLayers.Comment);
                 }
                 if (markedArea.labelRectangle) {
                     this.drawRectangle(markedArea.labelRectangle, <number>GraphicalLayers.Background);
                 }
                 if (markedArea.label) {
-                    this.drawLabel(markedArea.label, <number>GraphicalLayers.Comment);
+                    markedArea.label.SVGNode = this.drawLabel(markedArea.label, <number>GraphicalLayers.Comment);
                 }
             }
         }
@@ -597,10 +614,10 @@ export abstract class MusicSheetDrawer {
         for (const comment of system.GraphicalComments) {
             if (comment) {
                 if (comment.settings) {
-                    this.drawLabel(comment.settings, <number>GraphicalLayers.Comment);
+                    comment.settings.SVGNode = this.drawLabel(comment.settings, <number>GraphicalLayers.Comment);
                 }
                 if (comment.label) {
-                    this.drawLabel(comment.label, <number>GraphicalLayers.Comment);
+                    comment.label.SVGNode = this.drawLabel(comment.label, <number>GraphicalLayers.Comment);
                 }
             }
         }

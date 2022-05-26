@@ -1,4 +1,5 @@
 import Vex from "vexflow";
+import VF = Vex.Flow;
 import {IGraphicalSymbolFactory} from "../../Interfaces/IGraphicalSymbolFactory";
 import {MusicSystem} from "../MusicSystem";
 import {VexFlowMusicSystem} from "./VexFlowMusicSystem";
@@ -88,7 +89,10 @@ export class VexFlowGraphicalSymbolFactory implements IGraphicalSymbolFactory {
      * @returns {VexFlowMeasure}
      */
     public createExtraGraphicalMeasure(staffLine: StaffLine): GraphicalMeasure {
-        return new VexFlowMeasure(staffLine.ParentStaff, undefined, staffLine);
+        const extraGraphicalMeasure: GraphicalMeasure = new VexFlowMeasure(staffLine.ParentStaff, undefined, staffLine);
+        extraGraphicalMeasure.IsExtraGraphicalMeasure = true; // this also means that MeasureNumber < 0 because unchanged
+        extraGraphicalMeasure.ExtraGraphicalMeasurePreviousMeasure = staffLine.Measures.last();
+        return extraGraphicalMeasure;
     }
 
     /**
@@ -168,7 +172,7 @@ export class VexFlowGraphicalSymbolFactory implements IGraphicalSymbolFactory {
     public createInStaffClef(graphicalStaffEntry: GraphicalStaffEntry, clefInstruction: ClefInstruction): void {
         const se: VexFlowStaffEntry = graphicalStaffEntry as VexFlowStaffEntry;
         const vfClefParams: { type: string, size: string, annotation: string } = VexFlowConverter.Clef(clefInstruction, "small");
-        se.vfClefBefore = new Vex.Flow.ClefNote(vfClefParams.type, vfClefParams.size, vfClefParams.annotation);
+        se.vfClefBefore = new VF.ClefNote(vfClefParams.type, vfClefParams.size, vfClefParams.annotation);
         return;
     }
 

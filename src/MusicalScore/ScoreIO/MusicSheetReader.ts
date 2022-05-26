@@ -379,6 +379,9 @@ export class MusicSheetReader /*implements IMusicSheetReader*/ {
             sourceMeasureCounter++;
         }
         this.currentMeasure.Duration = maxInstrumentDuration; // can be 1/1 in a 4/4 time signature
+        // if (this.currentMeasure.Duration.Numerator === 0) {
+        //     this.currentMeasure.Duration = activeRhythm; // might be related to #1073
+        // }
         this.currentMeasure.ActiveTimeSignature = activeRhythm;
         this.currentMeasure.MeasureNumber = sourceMeasureCounter;
         for (let i: number = 0; i < instrumentsDurations.length; i++) {
@@ -583,11 +586,13 @@ export class MusicSheetReader /*implements IMusicSheetReader*/ {
                     const creditYInfo: number = creditYGiven ? parseFloat(creditY) : Number.MIN_VALUE;
                     if (creditYGiven && creditYInfo > systemYCoordinates) {
                         if (!this.musicSheet.Title) {
-                            const creditSize: string = creditChild.attribute("font-size").value;
-                            const titleCreditSizeInt: number = parseFloat(creditSize);
-                            if (largestTitleCreditSize < titleCreditSizeInt) {
-                                largestTitleCreditSize = titleCreditSizeInt;
-                                finalTitle = creditChild.value;
+                            const creditSize: string = creditChild.attribute("font-size")?.value;
+                            if (creditSize) {
+                                const titleCreditSizeInt: number = parseFloat(creditSize);
+                                if (largestTitleCreditSize < titleCreditSizeInt) {
+                                    largestTitleCreditSize = titleCreditSizeInt;
+                                    finalTitle = creditChild.value;
+                                }
                             }
                         }
                         if (!this.musicSheet.Subtitle) {

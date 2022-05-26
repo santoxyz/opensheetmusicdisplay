@@ -46,6 +46,7 @@ export class Note {
     private typeLength: Fraction;
     /** The NoteType given in the XML, e.g. quarter, which can be a normal quarter or tuplet quarter -> can have different length/fraction */
     private noteTypeXml: NoteType;
+    public DotsXml: number;
     /** The amount of notes the tuplet of this note (if there is one) replaces. */
     private normalNotes: number;
     private isRestFlag: boolean;
@@ -53,6 +54,8 @@ export class Note {
      * The untransposed (!!!) source data.
      */
     private pitch: Pitch;
+    /** The transposed pitch, if the score is transposed, otherwise undefined. */
+    public TransposedPitch: Pitch;
     public displayStepUnpitched: NoteEnum;
     public displayOctaveUnpitched: number;
     public get NoteAsString(): string {
@@ -98,7 +101,11 @@ export class Note {
     public Fingering: TechnicalInstruction; // this is also stored in VoiceEntry.TechnicalInstructions
     public StringInstruction: TechnicalInstruction; // this is also stored in VoiceEntry.TechnicalInstructions
     // note that there is also TabNote.StringNumber, so we can't use that identifier here
-    /** Used by GraphicalNote.FromNote(note) and osmd.rules.GNote(note) to get a GraphicalNote from a Note. */
+    /** Used by GraphicalNote.FromNote(note) and osmd.rules.GNote(note) to get a GraphicalNote from a Note.
+     *  Note that we don't want the data model (Note) to be dependent on the graphical implementation (GraphicalNote),
+     *    and have (potentially circular) import dependencies of graphical parts, which also applies to other non-graphical classes.
+     *    That's why we don't save a GraphicalNote reference directly in Note.
+     */
     public NoteToGraphicalNoteObjectId: number; // used with EngravingRules.NoteToGraphicalNoteMap
 
     public get ParentVoiceEntry(): VoiceEntry {

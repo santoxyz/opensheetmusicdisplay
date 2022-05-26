@@ -14,7 +14,8 @@ import { StaffLine } from "../MusicalScore/Graphical/StaffLine";
 import { GraphicalMeasure } from "../MusicalScore/Graphical/GraphicalMeasure";
 import { VexFlowMeasure } from "../MusicalScore/Graphical/VexFlow/VexFlowMeasure";
 import { CursorOptions } from "./OSMDOptions";
-import { BoundingBox } from "../MusicalScore";
+import { BoundingBox } from "../MusicalScore/Graphical/BoundingBox";
+import { GraphicalNote } from "../MusicalScore/Graphical/GraphicalNote";
 
 /**
  * A cursor which can iterate through the music sheet.
@@ -40,12 +41,24 @@ export class Cursor {
     curs.id = this.cursorElementId;
     curs.style.position = "absolute";
     if (this.cursorOptions.follow === true) {
-      curs.style.zIndex = "-1";
+      this.wantedZIndex = "-1";
+      curs.style.zIndex = this.wantedZIndex;
     } else {
-      curs.style.zIndex = "-2";
+      this.wantedZIndex = "-2";
+      curs.style.zIndex = this.wantedZIndex;
     }
     this.cursorElement = <HTMLImageElement>curs;
     this.container.appendChild(curs);
+  }
+
+  public adjustToBackgroundColor(): void {
+    let zIndex: string;
+    if (!this.rules.PageBackgroundColor) {
+          zIndex = this.wantedZIndex;
+    } else {
+      zIndex = "1";
+    }
+    this.cursorElement.style.zIndex = zIndex;
   }
 
   private container: HTMLElement;
@@ -55,6 +68,10 @@ export class Cursor {
    * but different between different OSMD objects on the same page.
    */
   public cursorElementId: string;
+  /** The desired zIndex (layer) of the cursor when no background color is set.
+   *  When a background color is set, using a negative zIndex would make the cursor invisible.
+   */
+  public wantedZIndex: string;
   private openSheetMusicDisplay: OpenSheetMusicDisplay;
   private rules: EngravingRules;
   private manager: MusicPartManager;
@@ -80,6 +97,7 @@ export class Cursor {
     this.hidden = false;
     //this.resetIterator(); // TODO maybe not here? though setting measure range to draw, rerendering, then handling cursor show is difficult
     this.update();
+    this.adjustToBackgroundColor();
   }
 
   public resetIterator(): void {
@@ -158,17 +176,19 @@ export class Cursor {
     }
 
     // y is common for both multirest and non-multirest, given the MusicSystem
-    y = musicSystem.PositionAndShape.AbsolutePosition.y + musicSystem.StaffLines[0].PositionAndShape.RelativePosition.y;
+    y = musicSystem.PositionAndShape.AbsolutePosition.y + musicSystem.StaffLines[0]?.PositionAndShape.RelativePosition.y ?? 0;
+    let endY: number = musicSystem.PositionAndShape.AbsolutePosition.y;
     const bottomStaffline: StaffLine = musicSystem.StaffLines[musicSystem.StaffLines.length - 1];
-    const endY: number = musicSystem.PositionAndShape.AbsolutePosition.y +
-    bottomStaffline.PositionAndShape.RelativePosition.y + bottomStaffline.StaffHeight;
+    if (bottomStaffline) { // can be undefined if drawFromMeasureNumber changed after cursor was shown
+      endY += bottomStaffline.PositionAndShape.RelativePosition.y + bottomStaffline.StaffHeight;
+    }
     height = endY - y;
 
     // Update the graphical cursor
     const measurePositionAndShape: BoundingBox = this.graphic.findGraphicalMeasure(iterator.CurrentMeasureIndex, 0).PositionAndShape;
     this.updateWidthAndStyle(measurePositionAndShape, x, y, height);
 
-    if (this.openSheetMusicDisplay.FollowCursor) {
+    if (this.openSheetMusicDisplay.FollowCursor && this.cursorOptions.follow) {
       if (!this.openSheetMusicDisplay.EngravingRules.RenderSingleHorizontalStaffline) {
         const diff: number = this.cursorElement.getBoundingClientRect().top;
         this.cursorElement.scrollIntoView({behavior: diff < 1000 ? "smooth" : "auto", block: "center"});
@@ -305,6 +325,15 @@ export class Cursor {
     const notes: Note[] = [];
     voiceEntries.forEach(voiceEntry => {
       notes.push.apply(notes, voiceEntry.Notes);
+    });
+    return notes;
+  }
+
+  public GNotesUnderCursor(instrument?: Instrument): GraphicalNote[] {
+    const voiceEntries: VoiceEntry[]  = this.VoicesUnderCursor(instrument);
+    const notes: GraphicalNote[] = [];
+    voiceEntries.forEach(voiceEntry => {
+      notes.push(...voiceEntry.Notes.map(note => this.rules.GNote(note)));
     });
     return notes;
   }

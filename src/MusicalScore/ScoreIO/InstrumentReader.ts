@@ -92,7 +92,7 @@ export class InstrumentReader {
   private activeRhythm: RhythmInstruction;
   private activeClefsHaveBeenInitialized: boolean[];
   private activeKeyHasBeenInitialized: boolean = false;
-  private abstractInstructions: [number, AbstractNotationInstruction][] = [];
+  private abstractInstructions: [number, AbstractNotationInstruction, Fraction][] = [];
   private openChordSymbolContainers: ChordSymbolContainer[] = [];
   private expressionReaders: ExpressionReader[];
   private currentVoiceGenerator: VoiceGenerator;
@@ -396,13 +396,14 @@ export class InstrumentReader {
           if (!isTuplet && !isGraceNote) {
             noteDuration = new Fraction(noteDivisions, 4 * this.divisions);
           }
+          const dots: number = xmlNode.elements("dot").length;
           this.currentVoiceGenerator.read(
             xmlNode, noteDuration, typeDuration, noteTypeXml, normalNotes, restNote,
             this.currentStaffEntry, this.currentMeasure,
             measureStartAbsoluteTimestamp,
             this.maxTieNoteFraction, isChord, octavePlusOne,
             printObject, isCueNote, isGraceNote, stemDirectionXml, tremoloStrokes, stemColorXml, noteheadColorXml,
-            vibratoStrokes
+            vibratoStrokes, dots
           );
 
           // notationsNode created further up for multiple checks
@@ -449,7 +450,7 @@ export class InstrumentReader {
               throw new MusicSheetReadingException(errorMsg + this.instrument.Name);
             }
           }
-          this.addAbstractInstruction(xmlNode, octavePlusOne, previousNode);
+          this.addAbstractInstruction(xmlNode, octavePlusOne, previousNode, currentFraction.clone());
           if (currentFraction.Equals(new Fraction(0, 1)) &&
             this.isAttributesNodeAtBeginOfMeasure(this.xmlMeasureList[this.currentXmlMeasureIndex], xmlNode)) {
             this.saveAbstractInstructionList(this.instrument.Staves.length, true);
@@ -601,7 +602,7 @@ export class InstrumentReader {
         for (let i: number = 0; i < this.expressionReaders.length; i++) {
          const reader: ExpressionReader = this.expressionReaders[i];
          if (reader) {
-           reader.checkForOpenExpressions(this.currentMeasure, currentFraction);
+           reader.closeOpenExpressions(this.currentMeasure, currentFraction);
           }
         }
       }
@@ -809,7 +810,7 @@ export class InstrumentReader {
    * @param attrNode
    * @param guitarPro
    */
-  private addAbstractInstruction(attrNode: IXmlElement, guitarPro: boolean, previousNode: IXmlElement): void {
+  private addAbstractInstruction(attrNode: IXmlElement, guitarPro: boolean, previousNode: IXmlElement, currentFraction: Fraction): void {
     if (attrNode.element("divisions")) {
       if (attrNode.elements().length === 1) {
         return;
@@ -888,9 +889,9 @@ export class InstrumentReader {
           }
 
         }
-        if (nodeList.hasAttributes && nodeList.attributes()[0].name === "number") {
+        if (nodeList.hasAttributes && nodeList.attribute("number")) {
           try {
-            staffNumber = parseInt(nodeList.attributes()[0].value, 10);
+            staffNumber = parseInt(nodeList.attribute("number").value, 10);
             if (staffNumber > this.currentClefNumber) {
               staffNumber = this.currentClefNumber;
             }
@@ -906,16 +907,8 @@ export class InstrumentReader {
           }
         }
 
-        // TODO problem: in saveAbstractInstructionList, this is always saved in this.currentStaffEntry.
-        //   so when there's a <forward> or <backup> instruction in <attributes> (which is unfortunate encoding), this gets misplaced.
-        //   so for now we skip it.
-        const skipClefInstruction: boolean = previousNode?.name === "forward";
-          // || previousNode?.name === "backup") && // necessary for clef at beginning of measure/system,
-          //   see sample test_staverepetitions_coda_etc.musicxml, where the bass clef was placed over a previous treble clef
-        if (!skipClefInstruction) {
-          const clefInstruction: ClefInstruction = new ClefInstruction(clefEnum, clefOctaveOffset, line);
-          this.abstractInstructions.push([staffNumber, clefInstruction]);
-        }
+        const clefInstruction: ClefInstruction = new ClefInstruction(clefEnum, clefOctaveOffset, line);
+        this.abstractInstructions.push([staffNumber, clefInstruction, currentFraction]);
       }
     }
     if (attrNode.element("key") !== undefined && this.instrument.MidiInstrumentId !== MidiInstrument.Percussion) {
@@ -954,7 +947,7 @@ export class InstrumentReader {
         }
       }
       const keyInstruction: KeyInstruction = new KeyInstruction(undefined, key, keyEnum);
-      this.abstractInstructions.push([1, keyInstruction]);
+      this.abstractInstructions.push([1, keyInstruction, currentFraction]);
     }
     if (attrNode.element("time")) {
       const timeNode: IXmlElement = attrNode.element("time");
@@ -1035,9 +1028,9 @@ export class InstrumentReader {
           new Fraction(num, denom, 0, false), symbolEnum
         );
         newRhythmInstruction.PrintObject = timePrintObject;
-        this.abstractInstructions.push([1, newRhythmInstruction]);
+        this.abstractInstructions.push([1, newRhythmInstruction, currentFraction]);
       } else {
-        this.abstractInstructions.push([1, new RhythmInstruction(new Fraction(4, 4, 0, false), RhythmSymbolEnum.NONE)]);
+        this.abstractInstructions.push([1, new RhythmInstruction(new Fraction(4, 4, 0, false), RhythmSymbolEnum.NONE), currentFraction]);
       }
     }
   }
@@ -1049,21 +1042,31 @@ export class InstrumentReader {
    */
   private saveAbstractInstructionList(numberOfStaves: number, beginOfMeasure: boolean): void {
     for (let i: number = this.abstractInstructions.length - 1; i >= 0; i--) {
-      const pair: [number, AbstractNotationInstruction] = this.abstractInstructions[i];
-      const key: number = pair[0];
-      const value: AbstractNotationInstruction = pair[1];
+      const instruction: [number, AbstractNotationInstruction, Fraction] = this.abstractInstructions[i];
+      const key: number = instruction[0]; // staffNumber
+      const value: AbstractNotationInstruction = instruction[1];
+      const instructionTimestamp: Fraction = instruction[2];
       if (value instanceof ClefInstruction) {
         const clefInstruction: ClefInstruction = <ClefInstruction>value;
         if (this.currentXmlMeasureIndex === 0 || (key <= this.activeClefs.length && clefInstruction !== this.activeClefs[key - 1])) {
-          if (!beginOfMeasure && this.currentStaffEntry !== undefined && !this.currentStaffEntry.hasNotes() && key - 1
-            === this.instrument.Staves.indexOf(this.currentStaffEntry.ParentStaff)) {
+          if (!beginOfMeasure && this.currentStaffEntry !== undefined && !this.currentStaffEntry.hasNotes() &&
+            key - 1 === this.instrument.Staves.indexOf(this.currentStaffEntry.ParentStaff)) {
             const newClefInstruction: ClefInstruction = clefInstruction;
-            newClefInstruction.Parent = this.currentStaffEntry;
-            this.currentStaffEntry.removeFirstInstructionOfTypeClefInstruction();
-            this.currentStaffEntry.Instructions.push(newClefInstruction);
+            const staffEntry: SourceStaffEntry = this.currentStaffEntry;
+            // the instructionTimestamp may differ from the current staffentry's when backup/forward tags are used in the XML.
+            //   in this case, we need to skip placing it at the current entry, and save it for later.
+            if (instructionTimestamp && Math.abs(instructionTimestamp.RealValue - staffEntry.Timestamp.RealValue) > 0.01) {
+              continue; // this instruction should be at a different staffentry/timestamp.
+            }
+            newClefInstruction.Parent = staffEntry;
+            staffEntry.removeFirstInstructionOfTypeClefInstruction();
+            staffEntry.Instructions.push(newClefInstruction);
             this.activeClefs[key - 1] = clefInstruction;
             this.abstractInstructions.splice(i, 1);
           } else if (beginOfMeasure) {
+            if (instructionTimestamp.RealValue !== 0) {
+              continue;
+            }
             let firstStaffEntry: SourceStaffEntry;
             if (this.currentMeasure) {
               const newClefInstruction: ClefInstruction = clefInstruction;
@@ -1115,6 +1118,58 @@ export class InstrumentReader {
               this.activeClefs[key - 1] = clefInstruction;
               this.abstractInstructions.splice(i, 1);
             }
+          } else {
+            let lastStaffEntryBefore: SourceStaffEntry;
+            const duration: Fraction = this.activeRhythm.Rhythm;
+            if (duration.RealValue > 0 &&
+              instructionTimestamp.RealValue / duration.RealValue > 0.90) {
+                if (!this.currentMeasure.LastInstructionsStaffEntries[key - 1]) {
+                  this.currentMeasure.LastInstructionsStaffEntries[key - 1] = new SourceStaffEntry(undefined, this.instrument.Staves[key - 1]);
+                }
+                lastStaffEntryBefore = this.currentMeasure.LastInstructionsStaffEntries[key - 1];
+            }
+            // TODO figure out a more elegant way to do this. (see #1120)
+            //   the problem is that not all the staffentries in the measure exist yet,
+            //   so we can't put the clefInstruction before the correct note.
+            //   (if we try that, it's one note too early -> save instruction for later?)
+            //let lastTimestampBefore: Fraction;
+            // for (const vssec of this.currentMeasure.VerticalSourceStaffEntryContainers) {
+            //   for (const sse of vssec.StaffEntries) {
+            //     if (sse?.ParentStaff?.Id !== key) {
+            //       continue;
+            //     }
+            //     // if (!lastTimestampBefore || sse.Timestamp.lte(instructionTimestamp)) {
+            //     //   lastTimestampBefore = sse.Timestamp;
+            //     //   lastStaffEntryBefore = sse;
+            //     // } else {
+            //     //   lastStaffEntryBefore = sse;
+            //     //   break;
+            //     // }
+            //     if (sse.Timestamp.gte(instructionTimestamp)) {
+            //       lastStaffEntryBefore = sse;
+            //       break;
+            //     }
+            //   }
+            // }
+            //const sseIndex: number = this.inSourceMeasureInstrumentIndex + staffNumber - 1;
+            // if (!lastStaffEntryBefore) {
+            //   // this doesn't work for some reason
+            //   const newContainer: VerticalSourceStaffEntryContainer = new VerticalSourceStaffEntryContainer(this.currentMeasure, instructionTimestamp, 1);
+            //   const newStaffEntry: SourceStaffEntry = new SourceStaffEntry(newContainer, this.instrument.Staves[key - 1]);
+            //   newContainer.StaffEntries.push(newStaffEntry);
+            //   this.currentMeasure.VerticalSourceStaffEntryContainers.push(newContainer);
+            //   lastStaffEntryBefore = newStaffEntry;
+            // }
+            // if (!lastStaffEntryBefore) {
+              //   lastStaffEntryBefore = new SourceStaffEntry(undefined, undefined);
+              //   this.currentMeasure.LastInstructionsStaffEntries[sseIndex] = lastStaffEntryBefore;
+              // }
+            if (lastStaffEntryBefore) {
+              clefInstruction.Parent = lastStaffEntryBefore;
+              lastStaffEntryBefore.Instructions.push(clefInstruction);
+              this.activeClefs[key - 1] = clefInstruction;
+              this.abstractInstructions.splice(i, 1);
+            } // else clefinstruction might be processed later (e.g. Haydn Concertante measure 314)
           }
         } else if (key <= this.activeClefs.length && clefInstruction === this.activeClefs[key - 1]) {
           this.abstractInstructions.splice(i, 1);
