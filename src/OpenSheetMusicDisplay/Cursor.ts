@@ -193,7 +193,7 @@ export class Cursor {
         const diff: number = this.cursorElement.getBoundingClientRect().top;
         this.cursorElement.scrollIntoView({behavior: diff < 1000 ? "smooth" : "auto", block: "center"});
       } else {
-        this.cursorElement.scrollIntoView({behavior: "smooth", block: "center", inline: "center"});
+        this.cursorElement.scrollIntoView({behavior: "smooth", block: "start", inline: "center"});
       }
     }
     // Show cursor
@@ -203,36 +203,37 @@ export class Cursor {
 
   public updateWidthAndStyle(measurePositionAndShape: BoundingBox, x: number, y: number, height: number): void {
     const cursorElement: HTMLImageElement = this.cursorElement;
-    let newWidth: number = 0;
+    let newWidth: number = 0;	
+    let h_padding: number = 30;
     switch (this.cursorOptions.type) {
       case 1:
-        cursorElement.style.top = (y * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
+        cursorElement.style.top = (-h_padding + y * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
         cursorElement.style.left = ((x - 1.5) * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
-        cursorElement.height = (height * 10.0 * this.openSheetMusicDisplay.zoom);
+        cursorElement.height = h_padding*2 + (height * 10.0 * this.openSheetMusicDisplay.zoom);
         newWidth = 5 * this.openSheetMusicDisplay.zoom;
         break;
       case 2:
-        cursorElement.style.top = ((y-2.5) * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
+        cursorElement.style.top = (-h_padding + (y-2.5) * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
         cursorElement.style.left = (x * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
-        cursorElement.height = (1.5 * 10.0 * this.openSheetMusicDisplay.zoom);
+        cursorElement.height = h_padding*2 + (1.5 * 10.0 * this.openSheetMusicDisplay.zoom);
         newWidth = 5 * this.openSheetMusicDisplay.zoom;
         break;
       case 3:
-        cursorElement.style.top = measurePositionAndShape.AbsolutePosition.y * 10.0 * this.openSheetMusicDisplay.zoom +"px";
+        cursorElement.style.top = -h_padding + measurePositionAndShape.AbsolutePosition.y * 10.0 * this.openSheetMusicDisplay.zoom +"px";
         cursorElement.style.left = measurePositionAndShape.AbsolutePosition.x * 10.0 * this.openSheetMusicDisplay.zoom +"px";
-        cursorElement.height = (height * 10.0 * this.openSheetMusicDisplay.zoom);
+        cursorElement.height = h_padding*2 + (height * 10.0 * this.openSheetMusicDisplay.zoom);
         newWidth = measurePositionAndShape.Size.width * 10 * this.openSheetMusicDisplay.zoom;
         break;
       case 4:
-        cursorElement.style.top = measurePositionAndShape.AbsolutePosition.y * 10.0 * this.openSheetMusicDisplay.zoom +"px";
+        cursorElement.style.top = -h_padding + measurePositionAndShape.AbsolutePosition.y * 10.0 * this.openSheetMusicDisplay.zoom +"px";
         cursorElement.style.left = measurePositionAndShape.AbsolutePosition.x * 10.0 * this.openSheetMusicDisplay.zoom +"px";
-        cursorElement.height = (height * 10.0 * this.openSheetMusicDisplay.zoom);
+        cursorElement.height = h_padding*2 + (height * 10.0 * this.openSheetMusicDisplay.zoom);
         newWidth = (x-measurePositionAndShape.AbsolutePosition.x) * 10 * this.openSheetMusicDisplay.zoom;
         break;
         default:
-        cursorElement.style.top = (y * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
+        cursorElement.style.top = -h_padding + (y * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
         cursorElement.style.left = ((x - 1.5) * 10.0 * this.openSheetMusicDisplay.zoom) + "px";
-        cursorElement.height = (height * 10.0 * this.openSheetMusicDisplay.zoom);
+        cursorElement.height = h_padding*2 + (height * 10.0 * this.openSheetMusicDisplay.zoom);
         newWidth = 3 * 10.0 * this.openSheetMusicDisplay.zoom;
         break;
     }
