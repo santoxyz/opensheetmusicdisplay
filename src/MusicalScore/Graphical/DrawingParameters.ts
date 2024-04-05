@@ -1,32 +1,18 @@
 import { EngravingRules } from "./EngravingRules";
 import { PlacementEnum } from "../VoiceData/Expressions/AbstractExpression";
-
-export enum ColoringModes {
-    XML = 0,
-    AutoColoring = 1,
-    CustomColorSet = 2
-}
-
-export enum DrawingParametersEnum {
-    allon = "allon",
-    compact = "compact",
-    compacttight = "compacttight",
-    default = "default",
-    leadsheet = "leadsheet",
-    preview = "preview",
-    thumbnail = "thumbnail",
-}
+import { DrawingParametersEnum } from "../../Common/Enums/DrawingParametersEnum";
+import { ColoringModes } from "../../Common/Enums/ColoringModes";
 
 /** Internal drawing/rendering parameters and broad modes like compact and thumbnail. Overlap with EngravingRules. */
 export class DrawingParameters {
     /** will set other settings if changed with set method */
     private drawingParametersEnum: DrawingParametersEnum;
-    private rules: EngravingRules = new EngravingRules();
+    private rules: EngravingRules;
     public drawHighlights: boolean;
     public drawErrors: boolean;
     public drawSelectionStartSymbol: boolean;
     public drawSelectionEndSymbol: boolean;
-    public drawCursors: boolean;
+    public drawCursors: boolean = true;
     public drawActivitySymbols: boolean;
     public drawScrollIndicator: boolean;
     public drawComments: boolean;
@@ -35,6 +21,7 @@ export class DrawingParameters {
     public drawSubtitle: boolean = true;
     public drawLyricist: boolean = true;
     public drawComposer: boolean = true;
+    public drawCopyright: boolean = false;
     public drawCredits: boolean = true;
     public drawPartNames: boolean = true;
     public coloringMode: ColoringModes;
@@ -42,7 +29,11 @@ export class DrawingParameters {
     /** Draw notes set to be invisible (print-object="no" in XML). */
     public drawHiddenNotes: boolean = false;
 
-    constructor(drawingParameters: DrawingParametersEnum = DrawingParametersEnum.default) {
+    constructor(drawingParameters: DrawingParametersEnum = DrawingParametersEnum.default, rules?: EngravingRules) {
+        this.rules = rules;
+        if (!this.rules) {
+            this.rules = new EngravingRules();
+        }
         this.DrawingParametersEnum = drawingParameters;
     }
 
@@ -170,6 +161,7 @@ export class DrawingParameters {
         this.DrawTitle = value;
         this.DrawSubtitle = value;
         this.DrawLyricist = value;
+        this.DrawCopyright = value;
     }
     // TODO these drawCredits settings are duplicate in drawingParameters and EngravingRules. Maybe we only need them in EngravingRules.
     // this sets the parameter in DrawingParameters, which in turn sets the parameter in EngravingRules.
@@ -219,6 +211,15 @@ export class DrawingParameters {
     public set DrawLyricist(value: boolean) {
         this.drawLyricist = value;
         this.rules.RenderLyricist = value;
+    }
+
+    public get DrawCopyright(): boolean {
+        return this.drawCopyright;
+    }
+
+    public set DrawCopyright(value: boolean) {
+        this.drawCopyright = value;
+        this.rules.RenderCopyright = value;
     }
 
     public get DrawPartNames(): boolean {

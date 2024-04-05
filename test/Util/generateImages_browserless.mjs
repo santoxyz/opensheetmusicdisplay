@@ -34,23 +34,26 @@ function sleep (ms) {
 //   (without these being global, we'd have to pass many of these values to the generateSampleImage function)
 // eslint-disable-next-line prefer-const
 let [osmdBuildDir, sampleDir, imageDir, imageFormat, pageWidth, pageHeight, filterRegex, mode, debugSleepTimeString, skyBottomLinePreference] = process.argv.slice(2, 12);
+imageFormat = imageFormat?.toLowerCase();
 if (!osmdBuildDir || !sampleDir || !imageDir || (imageFormat !== "png" && imageFormat !== "svg")) {
     console.log("usage: " +
         // eslint-disable-next-line max-len
         "node test/Util/generateImages_browserless.mjs osmdBuildDir sampleDirectory imageDirectory svg|png [width|0] [height|0] [filterRegex|all|allSmall] [--debug|--osmdtesting] [debugSleepTime]");
     console.log("  (use pageWidth and pageHeight 0 to not divide the rendering into pages (endless page))");
     console.log('  (use "all" to skip filterRegex parameter. "allSmall" with --osmdtesting skips two huge OSMD samples that take forever to render)');
-    console.log("example: node test/Util/generateImages_browserless.mjs ../../build ./test/data/ ./export png 210 297 allSmall --debug 5000");
+    console.log("example: node test/Util/generateImages_browserless.mjs ../../build ./test/data/ ./export png");
     console.log("Error: need osmdBuildDir, sampleDir, imageDir and svg|png arguments. Exiting.");
     process.exit(1);
 }
+const useWhiteTabNumberBackground = true;
+// use white instead of transparent background for tab numbers for PNG export.
+//   can fix black rectangles displayed, depending on your image viewer / program.
+//   though this is unnecessary if your image viewer displays transparent as white
+
 let pageFormat;
 
 if (!mode) {
     mode = "";
-}
-if (imageFormat !== "svg") {
-    imageFormat = "png";
 }
 
 // let OSMD; // can only be required once window was simulated
@@ -246,6 +249,11 @@ async function init () {
     // osmdInstance.EngravingRules.DistanceBetweenVerticalSystemLines = 0.15; // 0.35 is default
     // for more options check EngravingRules.ts (though not all of these are meant and fully supported to be changed at will)
 
+    if (useWhiteTabNumberBackground && backend === "png") {
+        osmdInstance.EngravingRules.pageBackgroundColor = "#FFFFFF";
+        // fix for tab number having black background depending on image viewer
+        //   otherwise, the rectangle is transparent, which can be displayed as black in certain programs
+    }
     if (DEBUG) {
         osmdInstance.setLogLevel("debug");
         // debug(`osmd PageFormat: ${osmdInstance.EngravingRules.PageFormat.width}x${osmdInstance.EngravingRules.PageFormat.height}`)
@@ -262,11 +270,17 @@ async function init () {
 
         await generateSampleImage(sampleFilename, sampleDir, osmdInstance, osmdTestingMode, {}, DEBUG);
 
-        if (osmdTestingMode && !osmdTestingSingleMode && sampleFilename.startsWith("Beethoven") && sampleFilename.includes("Geliebte")) {
-            // generate one more testing image with skyline and bottomline. (startsWith 'Beethoven' don't catch the function test)
-            await generateSampleImage(sampleFilename, sampleDir, osmdInstance, osmdTestingMode, {skyBottomLine: true}, DEBUG);
-            // generate one more testing image with GraphicalNote positions
-            await generateSampleImage(sampleFilename, sampleDir, osmdInstance, osmdTestingMode, {boundingBoxes: "VexFlowGraphicalNote"}, DEBUG);
+        if (osmdTestingMode) {
+            if (!osmdTestingSingleMode && sampleFilename.startsWith("Beethoven") && sampleFilename.includes("Geliebte")) {
+                // generate one more testing image with skyline and bottomline. (startsWith 'Beethoven' don't catch the function test)
+                await generateSampleImage(sampleFilename, sampleDir, osmdInstance, osmdTestingMode, {skyBottomLine: true}, DEBUG);
+                // generate one more testing image with GraphicalNote positions
+                await generateSampleImage(sampleFilename, sampleDir, osmdInstance, osmdTestingMode, {boundingBoxes: "VexFlowGraphicalNote"}, DEBUG);
+            } else if (sampleFilename.startsWith("test_tab_x-alignment_triplet_plus_bracket_below_above")) {
+                // generate one more testing image in dark mode
+                await generateSampleImage(sampleFilename, sampleDir, osmdInstance, osmdTestingMode, {darkMode: true}, DEBUG);
+
+            }
         }
     }
 
@@ -312,6 +326,8 @@ async function generateSampleImage (sampleFilename, directory, osmdInstance, osm
     // set sample-specific options for OSMD visual regression testing
     let includeSkyBottomLine = false;
     let drawBoundingBoxString;
+    let isTestOctaveShiftInvisibleInstrument;
+    let isTestInvisibleMeasureNotAffectingLayout;
     if (osmdTestingMode) {
         const isFunctionTestAutobeam = sampleFilename.startsWith("OSMD_function_test_autobeam");
         const isFunctionTestAutoColoring = sampleFilename.startsWith("OSMD_function_test_auto-custom-coloring");
@@ -320,6 +336,17 @@ async function generateSampleImage (sampleFilename, directory, osmdInstance, osm
         const defaultOrCompactTightMode = sampleFilename.startsWith("OSMD_Function_Test_Container_height") ? "compacttight" : "default";
         const isTestFlatBeams = sampleFilename.startsWith("test_drum_tuplet_beams");
         const isTestEndClefStaffEntryBboxes = sampleFilename.startsWith("test_end_measure_clefs_staffentry_bbox");
+        const isTestPageBreakImpliesSystemBreak = sampleFilename.startsWith("test_pagebreak_implies_systembreak");
+        const isTestPageBottomMargin0 = sampleFilename.includes("PageBottomMargin0");
+        const isTestTupletBracketTupletNumber = sampleFilename.includes("test_tuplet_bracket_tuplet_number");
+        const isTestCajon2NoteSystem = sampleFilename.includes("test_cajon_2-note-system");
+        isTestOctaveShiftInvisibleInstrument = sampleFilename.includes("test_octaveshift_first_instrument_invisible");
+        const isTextOctaveShiftExtraGraphicalMeasure = sampleFilename.includes("test_octaveshift_extragraphicalmeasure");
+        isTestInvisibleMeasureNotAffectingLayout = sampleFilename.includes("test_invisible_measure_not_affecting_layout");
+        const isTestWedgeMultilineCrescendo = sampleFilename.includes("test_wedge_multiline_crescendo");
+        const isTestWedgeMultilineDecrescendo = sampleFilename.includes("test_wedge_multiline_decrescendo");
+        const isTestTabs4Strings = sampleFilename.includes("test_tabs_4_strings");
+        osmdInstance.EngravingRules.loadDefaultValues(); // note this may also be executed in setOptions below via drawingParameters default
         if (isTestEndClefStaffEntryBboxes) {
             drawBoundingBoxString = "VexFlowStaffEntry";
         } else {
@@ -335,11 +362,17 @@ async function generateSampleImage (sampleFilename, directory, osmdInstance, osm
             drawFromMeasureNumber: isFunctionTestDrawingRange ? 9 : 1,
             drawUpToMeasureNumber: isFunctionTestDrawingRange ? 12 : Number.MAX_SAFE_INTEGER,
             newSystemFromXML: isFunctionTestSystemAndPageBreaks,
+            newSystemFromNewPageInXML: isTestPageBreakImpliesSystemBreak,
             newPageFromXML: isFunctionTestSystemAndPageBreaks,
             pageBackgroundColor: "#FFFFFF", // reset by drawingparameters default
             pageFormat: pageFormat, // reset by drawingparameters default,
             ...makeSkyBottomLineOptions()
         });
+        if (options.darkMode) {
+            osmdInstance.setOptions({darkMode: true}); // note that we set pageBackgroundColor above, so we need to overwrite it here.
+        }
+        // note that loadDefaultValues() may be executed in setOptions with drawingParameters default
+        //osmdInstance.EngravingRules.RenderSingleHorizontalStaffline = true; // to use this option here, place it after setOptions(), see above
         osmdInstance.EngravingRules.AlwaysSetPreferredSkyBottomLineBackendAutomatically = false; // this would override the command line options (--plain etc)
         includeSkyBottomLine = options.skyBottomLine ? options.skyBottomLine : false; // apparently es6 doesn't have ?? operator
         osmdInstance.drawSkyLine = includeSkyBottomLine; // if includeSkyBottomLine, draw skyline and bottomline, else not
@@ -353,11 +386,41 @@ async function generateSampleImage (sampleFilename, directory, osmdInstance, osm
         } else {
             osmdInstance.EngravingRules.FlatBeams = false;
         }
+        if (isTestPageBottomMargin0) {
+            osmdInstance.EngravingRules.PageBottomMargin = 0;
+        }
+        if (isTestTupletBracketTupletNumber) {
+            osmdInstance.EngravingRules.TupletNumberLimitConsecutiveRepetitions = true;
+            osmdInstance.EngravingRules.TupletNumberMaxConsecutiveRepetitions = 2;
+            osmdInstance.EngravingRules.TupletNumberAlwaysDisableAfterFirstMax = true; // necessary to trigger bug
+        }
+        if (isTestCajon2NoteSystem) {
+            osmdInstance.EngravingRules.PercussionUseCajon2NoteSystem = true;
+        }
+        if (isTextOctaveShiftExtraGraphicalMeasure ||
+            isTestOctaveShiftInvisibleInstrument ||
+            isTestWedgeMultilineCrescendo ||
+            isTestWedgeMultilineDecrescendo) {
+            osmdInstance.EngravingRules.NewSystemAtXMLNewSystemAttribute = true;
+        }
+        if (isTestTabs4Strings) {
+            osmdInstance.EngravingRules.TabKeySignatureSpacingAdded = false;
+            osmdInstance.EngravingRules.TabTimeSignatureSpacingAdded = false;
+            // more compact rendering. These are basically just aesthetic options, as a showcase.
+        }
     }
 
     try {
         debug("loading sample " + sampleFilename, DEBUG);
         await osmdInstance.load(loadParameter, sampleFilename); // if using load.then() without await, memory will not be freed up between renders
+        if (isTestOctaveShiftInvisibleInstrument) {
+            osmdInstance.Sheet.Instruments[0].Visible = false;
+        }
+        if (isTestInvisibleMeasureNotAffectingLayout) {
+            if (osmdInstance.Sheet.Instruments[1]) { // some systems can't handle ?. in this script (just a safety check anyways)
+                osmdInstance.Sheet.Instruments[1].Visible = false;
+            }
+        }
     } catch (ex) {
         debug("couldn't load sample " + sampleFilename + ", skipping. Error: \n" + ex);
         return;
@@ -400,9 +463,10 @@ async function generateSampleImage (sampleFilename, directory, osmdInstance, osm
     for (let pageIndex = 0; pageIndex < Math.max(dataUrls.length, markupStrings.length); pageIndex++) {
         const pageNumberingString = `${pageIndex + 1}`;
         const skybottomlineString = includeSkyBottomLine ? "skybottomline_" : "";
+        const darkmodeString = options.darkMode ? "darkmode_" : "";
         const graphicalNoteBboxesString = drawBoundingBoxString ? "bbox" + drawBoundingBoxString + "_" : "";
         // pageNumberingString = dataUrls.length > 0 ? pageNumberingString : '' // don't put '_1' at the end if only one page. though that may cause more work
-        const pageFilename = `${imageDir}/${sampleFilename}_${skybottomlineString}${graphicalNoteBboxesString}${pageNumberingString}.${imageFormat}`;
+        const pageFilename = `${imageDir}/${sampleFilename}_${darkmodeString}${skybottomlineString}${graphicalNoteBboxesString}${pageNumberingString}.${imageFormat}`;
 
         if (imageFormat === "png") {
             const dataUrl = dataUrls[pageIndex];

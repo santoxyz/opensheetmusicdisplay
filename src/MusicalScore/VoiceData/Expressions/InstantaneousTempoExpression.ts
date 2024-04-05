@@ -4,6 +4,9 @@ import {ArgumentOutOfRangeException} from "../../Exceptions";
 import {Fraction} from "../../../Common/DataObjects/Fraction";
 import {MultiTempoExpression} from "./MultiTempoExpression";
 
+/** Tempo expressions that usually have an instantaneous and non-gradual effect on playback speed (e.g. Allegro),
+ * or at least cover large sections, compared to the usually gradual effects or shorter sections of ContinuousExpressions.
+ */
 export class InstantaneousTempoExpression extends AbstractTempoExpression {
     constructor(label: string, placement: PlacementEnum, staffNumber: number,
                 soundTempo: number, parentMultiTempoExpression: MultiTempoExpression, isMetronomeMark: boolean = false) {
@@ -11,11 +14,13 @@ export class InstantaneousTempoExpression extends AbstractTempoExpression {
             label = " = " + soundTempo;
         }*/
         super(label, placement, staffNumber, parentMultiTempoExpression);
+        this.isMetronomeMark = isMetronomeMark;
         this.setTempoAndTempoType(soundTempo);
     }
 
     public dotted: boolean;
     public beatUnit: string;
+    public isMetronomeMark: boolean;
     private static listInstantaneousTempoLarghissimo: string[] = ["Larghissimo", "Sehr breit", "very, very slow"]; // }), TempoEnum.larghissimo);
     private static listInstantaneousTempoGrave: string[] = ["Grave", "Schwer", "slow and solemn"]; //  }), TempoEnum.grave);
     private static listInstantaneousTempoLento: string[] = ["Lento", "Lent", "Langsam", "slowly"]; //  }), TempoEnum.lento);
@@ -25,12 +30,12 @@ export class InstantaneousTempoExpression extends AbstractTempoExpression {
     private static listInstantaneousTempoAdagietto: string[] = ["Adagietto", "Ziemlich ruhig", "Ziemlich langsam", "rather slow"]; //  }), TempoEnum.adagietto);
     private static listInstantaneousTempoAndanteModerato: string[] = ["Andante moderato"]; //  }), TempoEnum.andanteModerato);
     private static listInstantaneousTempoAndante: string[] = ["Andante", "Gehend", "Schreitend", "at a walking pace"]; //  }), TempoEnum.andante);
-    private static listInstantaneousTempoAndantino: string[] = ["Andantino"]; //  }), TempoEnum.andantino);
-    private static listInstantaneousTempoModerato: string[] = ["Moderato", "Mäßig", "Mod�r�", "moderately"]; //  }), TempoEnum.moderato);
-    private static listInstantaneousTempoAllegretto: string[] = ["Allegretto", "fast"]; //  }), TempoEnum.allegretto);
+    private static listInstantaneousTempoAndantino: string[] = ["Andantino", "Maestoso"]; //  }), TempoEnum.andantino);
+    private static listInstantaneousTempoModerato: string[] = ["Moderato", "Mäßig", "Modéré", "moderately"]; //  }), TempoEnum.moderato);
+    private static listInstantaneousTempoAllegretto: string[] = ["Allegretto", "Animato", "fast"]; //  }), TempoEnum.allegretto);
     private static listInstantaneousTempoAllegroModerato: string[] = ["Allegro moderato"]; //  }), TempoEnum.allegroModerato);
-    private static listInstantaneousTempoAllegro: string[] = ["Allegro", "Rapide", "Vite", "Rasch", "Schnell", "Fr�hlich"]; //  }), TempoEnum.allegro);
-    private static listInstantaneousTempoVivace: string[] = ["Vivace", "Lebhaft", "Lebendig", "lively and fast"]; //  }), TempoEnum.vivace);
+    private static listInstantaneousTempoAllegro: string[] = ["Allegro", "Rapide", "Vite", "Rasch", "Schnell", "Fröhlich"]; //  }), TempoEnum.allegro);
+    private static listInstantaneousTempoVivace: string[] = ["Vivace", "Allegro Assai", "Lebhaft", "Lebendig", "lively and fast"]; //  }), TempoEnum.vivace);
     private static listInstantaneousTempoVivacissimo: string[] = ["Vivacissimo", "Sehr lebhaft", "Sehr lebendig"]; //  }), TempoEnum.vivacissimo);
     private static listInstantaneousTempoAllegrissimo: string[] = ["Allegrissimo", "very fast"]; //  }), TempoEnum.allegrissimo);
     private static listInstantaneousTempoPresto: string[] = ["Presto", "Sehr schnell", "Geschwind"]; //  }), TempoEnum.presto);
@@ -41,6 +46,14 @@ export class InstantaneousTempoExpression extends AbstractTempoExpression {
         "tempo i",
         "rubato",
         "doppio movimento",
+        "rallentando",
+        "ritardando",
+        "ritard.",
+        "rit.",
+        "ritard",
+        "rall...",
+        "accelerando",
+        "accel",
     ];
     private static listInstantaneousTempoAddons: string[] = [
         "assai",

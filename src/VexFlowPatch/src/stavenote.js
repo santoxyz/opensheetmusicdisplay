@@ -28,6 +28,9 @@ const isInnerNoteIndex = (note, index) =>
 
 // Helper methods for rest positioning in ModifierContext.
 function shiftRestVertical(rest, note, dir) {
+  if (rest.note.shiftRestVerticalDisabled) {
+    return;
+  }
   const delta = (note.isrest ? 0.0 : 1.0) * dir;
 
   rest.line += delta;
@@ -124,7 +127,9 @@ export class StaveNote extends StemmableNote {
 
     // for two voice backward compatibility, ensure upper voice is stems up
     // for three voices, the voices must be in order (upper, middle, lower)
-    if (voices === 2 && noteU.stemDirection === -1 && noteL.stemDirection === 1) {
+    if (voices === 2 && noteU.stemDirection === -1 && noteL.stemDirection === 1 &&
+      !noteU.isrest && !noteL.isRest // no need to switch positions if one is a rest
+    ) {
       noteU = notesList[1];
       noteL = notesList[0];
     }
@@ -149,9 +154,15 @@ export class StaveNote extends StemmableNote {
         if (noteU.isrest) {
           // shift rest up
           shiftRestVertical(noteU, noteL, 1);
+          if (noteU.note.hasLedgerLinedRest) {
+            noteU.note.shiftRestVerticalDisabled = true; // don't shift again on re-render
+          }
         } else if (noteL.isrest) {
           // shift rest down
           shiftRestVertical(noteL, noteU, -1);
+          if (noteL.note.hasLedgerLinedRest) {
+            noteL.note.shiftRestVerticalDisabled = true; // don't shift again on re-render
+          }
         } else {
           xShift = voiceXShift;
           //Vexflowpatch: Instead of shifting notes, remove the appropriate flag.
@@ -399,6 +410,9 @@ export class StaveNote extends StemmableNote {
     // for displaced ledger lines
     this.use_default_head_x = false;
 
+    // VexFlowPatch: add optional padding to the right (e.g. for large lyrics)
+    this.paddingRight = 0;
+
     // Drawing
     this.note_heads = [];
     this.modifiers = [];
@@ -428,8 +442,16 @@ export class StaveNote extends StemmableNote {
 
     // Save prior noteHead styles & reapply them after making new noteheads.
     const noteHeadStyles = this.note_heads.map(noteHead => noteHead.getStyle());
+    // VexFlowPatch: save and restore noteheads (e.g. slash noteheads)
+    const note_types = [];
+    this.note_heads.forEach(head => note_types.push(head.note_type));
     this.buildNoteHeads();
-    this.note_heads.forEach((noteHead, index) => noteHead.setStyle(noteHeadStyles[index]));
+    this.note_heads.forEach((noteHead, index) => {
+      noteHead.setStyle(noteHeadStyles[index]);
+      if (note_types[index]) {
+        noteHead.note_type = note_types[index];
+      }
+    });
 
     if (this.stave) {
       this.note_heads.forEach(head => head.setStave(this.stave));
@@ -506,8 +528,14 @@ export class StaveNote extends StemmableNote {
         x_shift: noteProps.shift_right,
         stem_up_x_offset: noteProps.stem_up_x_offset,
         stem_down_x_offset: noteProps.stem_down_x_offset,
+        // VexFlowPatch: add option to shift notehead up or down (instead of stem in the variables above)
+        stem_up_y_shift: noteProps.stem_up_y_shift,
+        stem_down_y_shift: noteProps.stem_down_y_shift,
         line: noteProps.line,
       });
+      if (notehead.isLedgerLinedRest) {
+        this.hasLedgerLinedRest = true;
+      }
 
       this.note_heads[i] = notehead;
     }
@@ -594,7 +622,8 @@ export class StaveNote extends StemmableNote {
     }
 
     const { width: w, modLeftPx, extraLeftPx } = this.getMetrics();
-    const x = this.getAbsoluteX() - modLeftPx - extraLeftPx;
+    // VexFlowPatch: also subtract paddingRight (newly added in VexFlowPatch) to not shift note bbox
+    const x = this.getAbsoluteX() - modLeftPx - extraLeftPx - this.paddingRight;
 
     let minY = 0;
     let maxY = 0;
@@ -943,7 +972,8 @@ export class StaveNote extends StemmableNote {
     if (this.preFormatted) return;
     if (this.modifierContext) this.modifierContext.preFormat();
 
-    let width = this.getGlyphWidth() + this.extraLeftPx + this.extraRightPx;
+    // VexFlowPatch: add optional padding to the right (e.g. for large lyrics), default 0.
+    let width = this.getGlyphWidth() + this.extraLeftPx + this.extraRightPx + this.paddingRight;
 
     // For upward flagged notes, the width of the flag needs to be added
     if (this.renderFlag && this.glyph.flag && this.beam === null && this.stem_direction === Stem.UP) {

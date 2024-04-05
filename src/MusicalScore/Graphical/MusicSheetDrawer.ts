@@ -324,7 +324,8 @@ export abstract class MusicSheetDrawer {
         for (const systemLine of musicSystem.SystemLines) {
             this.drawSystemLineObject(systemLine);
         }
-        if (musicSystem.Parent === musicSystem.Parent.Parent.MusicPages[0]) {
+        if (this.rules.RenderSystemLabelsAfterFirstPage ||
+            musicSystem.Parent === musicSystem.Parent.Parent.MusicPages[0]) {
             for (const label of musicSystem.Labels) {
                 label.SVGNode = this.drawLabel(label, <number>GraphicalLayers.Notes);
             }
@@ -388,6 +389,8 @@ export abstract class MusicSheetDrawer {
         }
         this.drawOctaveShifts(staffLine);
 
+        this.drawPedals(staffLine);
+
         this.drawExpressions(staffLine);
 
         if (this.skyLineVisible) {
@@ -408,7 +411,7 @@ export abstract class MusicSheetDrawer {
             lyricLine.End.y += staffLine.PositionAndShape.AbsolutePosition.y;
             lyricLine.Start.x += staffLine.PositionAndShape.AbsolutePosition.x;
             lyricLine.End.x += staffLine.PositionAndShape.AbsolutePosition.x;
-            this.drawGraphicalLine(lyricLine, this.rules.LyricUnderscoreLineWidth);
+            this.drawGraphicalLine(lyricLine, this.rules.LyricUnderscoreLineWidth, lyricLine.colorHex);
         });
     }
 
@@ -436,7 +439,10 @@ export abstract class MusicSheetDrawer {
      * @param layer Number of the layer that the lyrics should be drawn in
      */
     protected drawDashes(lyricsDashes: GraphicalLabel[]): void {
-        lyricsDashes.forEach(dash => dash.SVGNode = this.drawLabel(dash, <number>GraphicalLayers.Notes));
+        lyricsDashes.forEach(dash => {
+            dash.SVGNode = this.drawLabel(dash, <number>GraphicalLayers.Notes);
+            (dash.SVGNode as SVGGElement)?.classList.add("dash");
+        });
     }
 
     // protected drawSlur(slur: GraphicalSlur, abs: PointF2D): void {
@@ -446,6 +452,8 @@ export abstract class MusicSheetDrawer {
     protected drawOctaveShifts(staffLine: StaffLine): void {
         return;
     }
+
+    protected abstract drawPedals(staffLine: StaffLine): void;
 
     protected drawStaffLines(staffLine: StaffLine): void {
         if (staffLine.StaffLines) {
@@ -547,6 +555,11 @@ export abstract class MusicSheetDrawer {
             } else if (type === "VexFlowContinuousDynamicExpression") {
                 typeMatch = startBox.DataObject instanceof VexFlowContinuousDynamicExpression;
             }
+            // else if (type === "MusicSystem") {
+            //     typeMatch = startBox.DataObject instanceof MusicSystem;
+            // } else if (type === "GraphicalMusicPage") {
+            //     typeMatch = startBox.DataObject instanceof GraphicalMusicPage;
+            // }
         }
         if (typeMatch || dataObjectString === type) {
             this.drawBoundingBox(startBox, undefined, true, dataObjectString, layer);

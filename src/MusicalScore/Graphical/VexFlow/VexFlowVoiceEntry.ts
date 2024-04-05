@@ -6,14 +6,16 @@ import { GraphicalStaffEntry } from "../GraphicalStaffEntry";
 import { unitInPixels } from "./VexFlowMusicSheetDrawer";
 import { NoteEnum } from "../../../Common/DataObjects/Pitch";
 import { Note } from "../../VoiceData/Note";
-import { ColoringModes } from "./../DrawingParameters";
+import { ColoringModes } from "../../../Common/Enums/ColoringModes";
 import { GraphicalNote } from "../GraphicalNote";
+import { EngravingRules } from "../EngravingRules";
 
 export class VexFlowVoiceEntry extends GraphicalVoiceEntry {
     private mVexFlowStaveNote: VF.StemmableNote;
+    public vfGhostNotes: VF.GhostNote[]; // sometimes we need multiple ghost notes instead of just one note (vfStaveNote).
 
-    constructor(parentVoiceEntry: VoiceEntry, parentStaffEntry: GraphicalStaffEntry) {
-        super(parentVoiceEntry, parentStaffEntry);
+    constructor(parentVoiceEntry: VoiceEntry, parentStaffEntry: GraphicalStaffEntry, rules?: EngravingRules) {
+        super(parentVoiceEntry, parentStaffEntry, rules);
     }
 
     public applyBordersFromVexflow(): void {
@@ -27,7 +29,8 @@ export class VexFlowVoiceEntry extends GraphicalVoiceEntry {
         this.PositionAndShape.RelativePosition.y = boundingBox.y / unitInPixels;
         this.PositionAndShape.BorderTop = 0;
         this.PositionAndShape.BorderBottom = boundingBox.h / unitInPixels;
-        this.PositionAndShape.BorderLeft = -(modifierWidth + staveNote.width / 2) / unitInPixels; // Left of our X origin is the modifier
+        const halfStavenoteWidth: number = (staveNote.width - ((staveNote as any).paddingRight ?? 0)) / 2;
+        this.PositionAndShape.BorderLeft = -(modifierWidth + halfStavenoteWidth) / unitInPixels; // Left of our X origin is the modifier
         this.PositionAndShape.BorderRight = (boundingBox.w - modifierWidth) / unitInPixels; // Right of x origin is the note
     }
 

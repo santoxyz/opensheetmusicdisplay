@@ -20,6 +20,7 @@ import {MusicSheetCalculator} from "./MusicSheetCalculator";
 import {MidiInstrument} from "../VoiceData/Instructions/ClefInstruction";
 import {CollectionUtil} from "../../Util/CollectionUtil";
 import {SystemLinePosition} from "./SystemLinePosition";
+import { MusicSheet } from "../MusicSheet";
 
 export class MusicSystemBuilder {
     protected measureList: GraphicalMeasure[][];
@@ -78,6 +79,7 @@ export class MusicSystemBuilder {
                 continue; // previous measure was probably multi-rest, skip this one
             }
             for (let idx: number = 0, len: number = graphicalMeasures.length; idx < len; ++idx) {
+                // graphicalMeasures[idx].InitiallyActiveClef = this.activeClefs[idx]; // too early to know clef
                 graphicalMeasures[idx].resetLayout();
             }
             const sourceMeasure: SourceMeasure = graphicalMeasures[0].parentSourceMeasure;
@@ -133,7 +135,9 @@ export class MusicSystemBuilder {
             }
             const measureFitsInSystem: boolean = this.currentSystemParams.currentWidth + totalMeasureWidth + nextMeasureBeginInstructionWidth < systemMaxWidth;
             const doXmlPageBreak: boolean = this.rules.NewPageAtXMLNewPageAttribute && sourceMeasure.printNewPageXml;
-            const doXmlLineBreak: boolean = doXmlPageBreak || // also create new system if doing page break
+            const impliedSystemBreak: boolean = doXmlPageBreak || // also create new system if doing page break
+                (this.rules.NewSystemAtXMLNewPageAttribute && sourceMeasure.printNewPageXml);
+            const doXmlLineBreak: boolean = impliedSystemBreak ||
                 (this.rules.NewSystemAtXMLNewSystemAttribute && sourceMeasure.printNewSystemXml);
             if (isSystemStartMeasure || (measureFitsInSystem && !doXmlLineBreak)) {
                 this.addMeasureToSystem(
@@ -166,6 +170,7 @@ export class MusicSystemBuilder {
                 this.finalizeCurrentSystem(this.measureList[this.measureList.length - 1], !this.rules.StretchLastSystemLine, false);
                 return this.musicSystems;
             }
+            // TODO FixedMeasureWidth: last measure will have a different stretch factor, misaligning measures and widths. use previous stretch factor instead
             this.finalizeCurrentAndCreateNewSystem(this.measureList[this.measureList.length - 1], !this.rules.StretchLastSystemLine, false);
         }
         return this.musicSystems;
@@ -397,6 +402,7 @@ export class MusicSystemBuilder {
                 const graphicalMeasure: GraphicalMeasure = this.graphicalMusicSheet
                     .getGraphicalMeasureFromSourceMeasureAndIndex(firstSourceMeasure, staffIndex);
                 this.activeClefs[i] = <ClefInstruction>firstSourceMeasure.FirstInstructionsStaffEntries[staffIndex].Instructions[0];
+                graphicalMeasure.InitiallyActiveClef = this.activeClefs[i]; // TODO ClefInstruction.copy? doesn't exist
                 const firstKeyInstruction: KeyInstruction = <KeyInstruction>firstSourceMeasure.FirstInstructionsStaffEntries[staffIndex].Instructions[1];
                 if (firstKeyInstruction) {
                     let keyInstruction: KeyInstruction = KeyInstruction.copy(firstKeyInstruction);
@@ -443,8 +449,12 @@ export class MusicSystemBuilder {
         }
         let totalBeginInstructionLengthX: number = 0.0;
         const sourceMeasure: SourceMeasure = measures[0].parentSourceMeasure;
+        const staves: any[] = []; // VF.Stave. generally don't want to reference Vexflow classes here.
         for (let idx: number = 0; idx < measureCount; ++idx) {
             const measure: GraphicalMeasure = measures[idx];
+            if (measure) { // MultiRestMeasure may be undefined
+                staves.push((measure as any).getVFStave()); // as VexFlowMeasure
+            }
             const staffIndex: number = this.visibleStaffIndices[idx];
             const beginInstructionsStaffEntry: SourceStaffEntry = sourceMeasure.FirstInstructionsStaffEntries[staffIndex];
             const beginInstructionLengthX: number = this.AddInstructionsAtMeasureBegin(
@@ -454,6 +464,7 @@ export class MusicSystemBuilder {
             );
             totalBeginInstructionLengthX = Math.max(totalBeginInstructionLengthX, beginInstructionLengthX);
         }
+        staves[0].formatBegModifiers(staves); // x-align notes / beginning modifiers like time signatures, e.g. for transposing instruments
         return totalBeginInstructionLengthX;
     }
 
@@ -497,6 +508,7 @@ export class MusicSystemBuilder {
                 }
             }
         }
+        measure.InitiallyActiveClef = currentClef ?? this.activeClefs[visibleStaffIdx];
         if (isSystemStartMeasure) {
             if (!currentClef) {
                 currentClef = this.activeClefs[visibleStaffIdx];
@@ -594,6 +606,8 @@ export class MusicSystemBuilder {
                     }
                 }
             }
+            // graphicalMeasures[visStaffIdx].InitiallyActiveClef = this.activeClefs[visStaffIdx];
+            //   already done at MusicSystemBuilder.AddInstructionsAtMeasureBegin
             const entries: SourceStaffEntry[] = measure.getEntriesPerStaff(staffIndex);
             for (let idx: number = 0, len2: number = entries.length; idx < len2; ++idx) {
                 const staffEntry: SourceStaffEntry = entries[idx];
@@ -710,8 +724,11 @@ export class MusicSystemBuilder {
     protected getMeasureStartLine(): SystemLinesEnum {
         const thisMeasureBeginsLineRep: boolean = this.thisMeasureBeginsLineRepetition();
         if (thisMeasureBeginsLineRep) {
-            const isSystemStartMeasure: boolean = this.currentSystemParams.IsSystemStartMeasure();
             const isGlobalFirstMeasure: boolean = this.measureListIndex === 0;
+            if (isGlobalFirstMeasure && this.rules.RepetitionAllowFirstMeasureBeginningRepeatBarline) {
+                return SystemLinesEnum.BoldThinDots;
+            }
+            const isSystemStartMeasure: boolean = this.currentSystemParams.IsSystemStartMeasure();
             if (this.previousMeasureEndsLineRepetition() && !isSystemStartMeasure) {
                 return SystemLinesEnum.DotsBoldBoldDots;
             }
@@ -838,6 +855,22 @@ export class MusicSystemBuilder {
             const measure: GraphicalMeasure = this.measureList[this.measureListIndex][idx];
             if (measure.endsWithLineRepetition()) {
                 return true;
+            } else if (measure.parentSourceMeasure?.isReducedToMultiRest) {
+                // check if the last measure in the multiple rest measure sequence has a repeat ending
+                const sheet: MusicSheet = this.graphicalMusicSheet.ParentMusicSheet;
+                let currentMultirestMeasure: SourceMeasure = measure.parentSourceMeasure;
+                const startMeasureIndex: number = sheet.SourceMeasures.indexOf(currentMultirestMeasure);
+                let currentMultirestMeasureNumber: number = currentMultirestMeasure.multipleRestMeasureNumber;
+                for (let i: number = startMeasureIndex + 1; i < sheet.SourceMeasures.length; i++) {
+                    const nextMultirestMeasure: SourceMeasure = sheet.SourceMeasures[i];
+                    if (nextMultirestMeasure.multipleRestMeasureNumber >= currentMultirestMeasureNumber) {
+                        currentMultirestMeasure = nextMultirestMeasure;
+                        currentMultirestMeasureNumber = nextMultirestMeasure.multipleRestMeasureNumber;
+                    } else {
+                        break; // end of current multirest chain = last multirest measure
+                    }
+                }
+                return currentMultirestMeasure.endsWithLineRepetition();
             }
         }
         return false;

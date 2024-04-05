@@ -8,6 +8,7 @@ import {UnknownExpression} from "./UnknownExpression";
 import {AbstractExpression} from "./AbstractExpression";
 import {PlacementEnum} from "./AbstractExpression";
 import { FontStyles } from "../../../Common/Enums/FontStyles";
+import { Pedal } from "./ContinuousExpressions/Pedal";
 
 export class MultiExpression {
 
@@ -19,6 +20,7 @@ export class MultiExpression {
     private sourceMeasure: SourceMeasure;
     private staffNumber: number;
     private timestamp: Fraction;
+    public EndOffsetFraction: Fraction;
     /** The 'number="x"' given in XML, e.g. of a wedge, used to identify similar expressions. */
     public numberXml: number;
     private instantaneousDynamic: InstantaneousDynamicExpression;
@@ -30,6 +32,8 @@ export class MultiExpression {
     private combinedExpressionsText: string;
     private octaveShiftStart: OctaveShift;
     private octaveShiftEnd: OctaveShift;
+    public PedalStart: Pedal;
+    public PedalEnd: Pedal;
 
     public get SourceMeasureParent(): SourceMeasure {
         return this.sourceMeasure;

@@ -42,6 +42,8 @@ export abstract class GraphicalMeasure extends GraphicalObject {
 
     public parentSourceMeasure: SourceMeasure;
     public staffEntries: GraphicalStaffEntry[];
+    /** The clef of the first note of the measure (the clef the measure starts with). */
+    public InitiallyActiveClef: ClefInstruction;
     /**
      * The x-width of possibly existing: repetition start line, clef, key, rhythm.
      */
@@ -73,6 +75,8 @@ export abstract class GraphicalMeasure extends GraphicalObject {
     public IsExtraGraphicalMeasure: boolean;
     public ExtraGraphicalMeasurePreviousMeasure: GraphicalMeasure;
     public ShowTimeSignature: boolean = true;
+    public ShowKeySignature: boolean = true;
+    public isTabMeasure: boolean = false;
 
     public get ParentStaff(): Staff {
         return this.parentStaff;

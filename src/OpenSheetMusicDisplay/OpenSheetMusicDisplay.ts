@@ -12,8 +12,10 @@ import { Cursor } from "./Cursor";
 import { MXLHelper } from "../Common/FileIO/Mxl";
 import { AJAX } from "./AJAX";
 import log from "loglevel";
-import { DrawingParametersEnum, DrawingParameters, ColoringModes } from "../MusicalScore/Graphical/DrawingParameters";
-import { IOSMDOptions, OSMDOptions, AutoBeamOptions, BackendType, CursorOptions } from "./OSMDOptions";
+import { DrawingParameters } from "../MusicalScore/Graphical/DrawingParameters";
+import { DrawingParametersEnum } from "../Common/Enums/DrawingParametersEnum";
+import { ColoringModes } from "../Common/Enums/ColoringModes";
+import { IOSMDOptions, OSMDOptions, AutoBeamOptions, BackendType, CursorOptions, CursorType } from "./OSMDOptions";
 import { EngravingRules, PageFormat } from "../MusicalScore/Graphical/EngravingRules";
 import { AbstractExpression } from "../MusicalScore/VoiceData/Expressions/AbstractExpression";
 import { Dictionary } from "typescript-collections";
@@ -29,7 +31,7 @@ import { NoteEnum } from "../Common/DataObjects/Pitch";
  * After the constructor, use load() and render() to load and render a MusicXML file.
  */
 export class OpenSheetMusicDisplay {
-    protected version: string = "1.5.0-dev"; // getter: this.Version
+    protected version: string = "1.8.8-dev"; // getter: this.Version
     // at release, bump version and change to -release, afterwards to -dev again
 
     /**
@@ -67,6 +69,9 @@ export class OpenSheetMusicDisplay {
     public get cursor(): Cursor { // lowercase for backwards compatibility since cursor -> cursors change
         return this.cursors[0];
     }
+    public get Cursor(): Cursor {
+        return this.cursor;
+    }
     public zoom: number = 1.0;
     protected zoomUpdated: boolean = false;
     /** Timeout in milliseconds used in osmd.load(string) when string is a URL. */
@@ -101,7 +106,7 @@ export class OpenSheetMusicDisplay {
             const str: string = <string>content;
             const self: OpenSheetMusicDisplay = this;
             // console.log("substring: " + str.substr(0, 5));
-            if (str.substr(0, 4) === "\x50\x4b\x03\x04") {
+            if (str.startsWith("\x50\x4b\x03\x04")) {
                 log.debug("[OSMD] This is a zip file, unpack it first: " + str);
                 // This is a zip file, unpack it first
                 return MXLHelper.MXLtoXMLstring(str).then(
@@ -115,16 +120,16 @@ export class OpenSheetMusicDisplay {
                 );
             }
             // Javascript loads strings as utf-16, which is wonderful BS if you want to parse UTF-8 :S
-            if (str.substr(0, 3) === "\uf7ef\uf7bb\uf7bf") {
-                log.debug("[OSMD] UTF with BOM detected, truncate first three bytes and pass along: " + str);
+            if (str.startsWith("\uf7ef\uf7bb\uf7bf")) {
+                log.debug("[OSMD] UTF with BOM detected, truncate first 3 bytes and pass along: " + str);
                 // UTF with BOM detected, truncate first three bytes and pass along
-                return self.load(str.substr(3));
+                return self.load(str.substring(3));
             }
             let trimmedStr: string = str;
             if (/^\s/.test(trimmedStr)) { // only trim if we need to. (end of string is irrelevant)
                 trimmedStr = trimmedStr.trim(); // trim away empty lines at beginning etc
             }
-            if (trimmedStr.substr(0, 6).includes("<?xml")) { // first character is sometimes null, making first five characters '<?xm'.
+            if (trimmedStr.startsWith("<?xml")) { // first character is sometimes null, making first five characters '<?xm'.
                 const modifiedXml: string = this.OnXMLRead(trimmedStr); // by default just returns trimmedStr unless a function options.OnXMLRead was set.
                 log.debug("[OSMD] Finally parsing XML content, length: " + modifiedXml.length);
                 // Parse the string representing an xml file
@@ -169,6 +174,9 @@ export class OpenSheetMusicDisplay {
             // error loading sheet, probably already logged, do nothing
             return Promise.reject(new Error("given music sheet was incomplete or could not be loaded."));
         }
+        // if (this.sheet.TitleString === "osmd.Version") {
+        //     this.sheet.TitleString = "OSMD version: " + this.Version; // useful for debug e.g. when console not available
+        // }
         log.info(`[OSMD] Loaded sheet ${this.sheet.TitleString} successfully.`);
 
         this.needBackendUpdate = true;
@@ -187,6 +195,9 @@ export class OpenSheetMusicDisplay {
             this.cursors.forEach(cursor => {
                 cursor.init(this.sheet.MusicPartManager, this.graphic);
             });
+        }
+        if (this.drawingParameters.DrawingParametersEnum === DrawingParametersEnum.leadsheet) {
+            this.graphic.LeadSheet = true;
         }
     }
 
@@ -254,6 +265,7 @@ export class OpenSheetMusicDisplay {
             });
         }
         this.zoomUpdated = false;
+        this.rules.RenderCount++;
         //console.log("[OSMD] render finished");
     }
 
@@ -269,6 +281,9 @@ export class OpenSheetMusicDisplay {
             if (this.drawer.Backends[0]) {
                 this.drawer.Backends[0].removeAllChildrenFromContainer(this.container);
             }
+            for (const backend of this.drawer.Backends) {
+                backend.free();
+            }
             this.drawer.Backends.clear();
         }
 
@@ -282,7 +297,8 @@ export class OpenSheetMusicDisplay {
         // Set page width
         let width: number = this.container.offsetWidth;
         if (this.rules.RenderSingleHorizontalStaffline) {
-            width = this.graphic.MusicPages[0].PositionAndShape.Size.width * 10 * this.zoom;
+            width = (this.EngravingRules.PageLeftMargin + this.graphic.MusicPages[0].PositionAndShape.Size.width + this.EngravingRules.PageRightMargin)
+                * 10 * this.zoom;
             // this.container.style.width = width + "px";
             // console.log("width: " + width)
         }
@@ -309,7 +325,17 @@ export class OpenSheetMusicDisplay {
             } else {
                 height = page.PositionAndShape.Size.height;
                 height += this.rules.PageBottomMargin;
-                height += this.rules.CompactMode ? this.rules.PageTopMarginNarrow : this.rules.PageTopMargin;
+                if (backend.getOSMDBackendType() === BackendType.Canvas) {
+                    height += 0.1; // Canvas bug: cuts off bottom pixel with PageBottomMargin = 0. Doesn't happen with SVG.
+                    //  we could only add 0.1 if PageBottomMargin === 0, but that would mean a margin of 0.1 has no effect compared to 0.
+                }
+                //height += this.rules.CompactMode ? this.rules.PageTopMarginNarrow : this.rules.PageTopMargin;
+                // adding the PageTopMargin with a composer label leads to the margin also added to the bottom of the page
+                height += page.PositionAndShape.BorderTop;
+                // try to respect elements like composer cut off: this gets messy.
+                // if (page.PositionAndShape.BorderTop < 0 && this.rules.PageTopMargin === 0) {
+                //     height += page.PositionAndShape.BorderTop + this.rules.PageTopMargin;
+                // }
                 if (this.rules.RenderTitle) {
                     height += this.rules.TitleTopDistance;
                 }
@@ -322,8 +348,10 @@ export class OpenSheetMusicDisplay {
                 // TODO optional: reduce zoom to fit the score within the limit.
             }
 
-            backend.resize(width, height);
+            backend.resize(width, height); // this resets strokeStyle for Canvas
             backend.clear(); // set bgcolor if defined (this.rules.PageBackgroundColor, see OSMDOptions)
+            backend.getContext().setFillStyle(this.rules.DefaultColorMusic);
+            backend.getContext().setStrokeStyle(this.rules.DefaultColorMusic); // needs to be set after resize()
             this.drawer.Backends.push(backend);
             this.graphic.drawer = this.drawer;
         }
@@ -346,7 +374,7 @@ export class OpenSheetMusicDisplay {
 
     /** Clears what OSMD has drawn on its canvas. */
     public clear(): void {
-        this.drawer.clear();
+        this.drawer?.clear();
         this.reset(); // without this, resize will draw loaded sheet again
     }
 
@@ -358,9 +386,17 @@ export class OpenSheetMusicDisplay {
         if (!this.rules) {
             this.rules = new EngravingRules();
         }
-        if (!this.drawingParameters) {
-            this.drawingParameters = new DrawingParameters();
-            this.drawingParameters.Rules = this.rules;
+        if (!this.drawingParameters && !options.drawingParameters) {
+            this.drawingParameters = new DrawingParameters(DrawingParametersEnum.default, this.rules);
+            // if "default", will be created below
+        } else if (options.drawingParameters) {
+            if (!this.drawingParameters) {
+                this.drawingParameters = new DrawingParameters(DrawingParametersEnum[options.drawingParameters], this.rules);
+            } else {
+                this.drawingParameters.DrawingParametersEnum =
+                    (<any>DrawingParametersEnum)[options.drawingParameters.toLowerCase()];
+                    // see DrawingParameters.ts: set DrawingParametersEnum, and DrawingParameters.ts:setForCompactTightMode()
+            }
         }
         if (options === undefined || options === null) {
             log.warn("warning: osmd.setOptions() called without an options parameter, has no effect."
@@ -370,11 +406,6 @@ export class OpenSheetMusicDisplay {
         this.OnXMLRead = function(xml): string {return xml;};
         if (options.onXMLRead) {
             this.OnXMLRead = options.onXMLRead;
-        }
-        if (options.drawingParameters) {
-            this.drawingParameters.DrawingParametersEnum =
-                (<any>DrawingParametersEnum)[options.drawingParameters.toLowerCase()];
-                // see DrawingParameters.ts: set DrawingParametersEnum, and DrawingParameters.ts:setForCompactTightMode()
         }
 
         const backendNotInitialized: boolean = !this.drawer || !this.drawer.Backends || this.drawer.Backends.length < 1;
@@ -495,6 +526,9 @@ export class OpenSheetMusicDisplay {
         if (options.newSystemFromXML !== undefined) {
             this.rules.NewSystemAtXMLNewSystemAttribute = options.newSystemFromXML;
         }
+        if (options.newSystemFromNewPageInXML !== undefined) {
+            this.rules.NewSystemAtXMLNewPageAttribute = options.newSystemFromNewPageInXML;
+        }
         if (options.newPageFromXML !== undefined) {
             this.rules.NewPageAtXMLNewPageAttribute = options.newPageFromXML;
         }
@@ -586,13 +620,18 @@ export class OpenSheetMusicDisplay {
         if (options.stretchLastSystemLine !== undefined) {
             this.rules.StretchLastSystemLine = options.stretchLastSystemLine;
         }
-        if (options.autoGenerateMutipleRestMeasuresFromRestMeasures !== undefined) {
-            this.rules.AutoGenerateMutipleRestMeasuresFromRestMeasures = options.autoGenerateMutipleRestMeasuresFromRestMeasures;
+        if (options.autoGenerateMultipleRestMeasuresFromRestMeasures !== undefined) {
+            this.rules.AutoGenerateMultipleRestMeasuresFromRestMeasures = options.autoGenerateMultipleRestMeasuresFromRestMeasures;
         }
         if (options.cursorsOptions !== undefined) {
             this.cursorsOptions = options.cursorsOptions;
         } else {
-            this.cursorsOptions = [{type: 0, color: this.EngravingRules.DefaultColorCursor, alpha: 0.5, follow: true}];
+            this.cursorsOptions = [{
+                type: CursorType.Standard,
+                color: this.EngravingRules.DefaultColorCursor,
+                alpha: 0.5,
+                follow: true
+            }];
         }
         if (options.preferredSkyBottomLineBatchCalculatorBackend !== undefined) {
             this.rules.PreferredSkyBottomLineBatchCalculatorBackend = options.preferredSkyBottomLineBatchCalculatorBackend;
@@ -607,12 +646,12 @@ export class OpenSheetMusicDisplay {
             this.rules.ColoringMode = ColoringModes.XML;
             return;
         }
-        const noteIndices: NoteEnum[] = [NoteEnum.C, NoteEnum.D, NoteEnum.E, NoteEnum.F, NoteEnum.G, NoteEnum.A, NoteEnum.B, -1];
+        const noteIndices: NoteEnum[] = [NoteEnum.C, NoteEnum.D, NoteEnum.E, NoteEnum.F, NoteEnum.G, NoteEnum.A, NoteEnum.B];
         let colorSetString: string[];
         if (options.coloringMode === ColoringModes.CustomColorSet) {
             if (!options.coloringSetCustom || options.coloringSetCustom.length !== 8) {
                 throw new Error("Invalid amount of colors: With coloringModes.customColorSet, " +
-                    "you have to provide a coloringSetCustom parameter with 8 strings (C to B, rest note).");
+                    "you have to provide a coloringSetCustom parameter (array) with 8 strings (C to B, rest note).");
             }
             // validate strings input
             for (const colorString of options.coloringSetCustom) {
@@ -634,9 +673,8 @@ export class OpenSheetMusicDisplay {
         for (let i: number = 0; i < noteIndices.length; i++) {
             coloringSetCurrent.setValue(noteIndices[i], colorSetString[i]);
         }
-        coloringSetCurrent.setValue(-1, colorSetString[7]);
+        coloringSetCurrent.setValue(-1, colorSetString.last()); // index 7. Unfortunately -1 is not a NoteEnum value, so we can't put it into noteIndices
         this.rules.ColoringSetCurrent = coloringSetCurrent;
-
         this.rules.ColoringMode = options.coloringMode;
     }
 
@@ -689,6 +727,7 @@ export class OpenSheetMusicDisplay {
         this.sheet = undefined;
         this.graphic = undefined;
         this.zoom = 1.0;
+        this.rules.RenderCount = 0;
     }
 
     /**
@@ -823,8 +862,9 @@ export class OpenSheetMusicDisplay {
         }
         backend.graphicalMusicPage = page; // the page the backend renders on. needed to identify DOM element to extract image/SVG
         backend.initialize(this.container, this.zoom);
-        backend.getContext().setFillStyle(this.rules.DefaultColorMusic);
-        backend.getContext().setStrokeStyle(this.rules.DefaultColorMusic);
+        //backend.getContext().setFillStyle(this.rules.DefaultColorMusic);
+        //backend.getContext().setStrokeStyle(this.rules.DefaultColorMusic);
+        // color needs to be set after resize() for CanvasBackend
         return backend;
     }
 

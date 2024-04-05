@@ -52,6 +52,7 @@ export class GraphicalMusicSheet {
     private subtitle: GraphicalLabel;
     private composer: GraphicalLabel;
     private lyricist: GraphicalLabel;
+    private copyright: GraphicalLabel;
     private cursors: GraphicalLine[] = [];
     private selectionStartSymbol: SelectionStartSymbol;
     private selectionEndSymbol: SelectionEndSymbol;
@@ -126,6 +127,14 @@ export class GraphicalMusicSheet {
 
     public set Lyricist(value: GraphicalLabel) {
         this.lyricist = value;
+    }
+
+    public get Copyright(): GraphicalLabel {
+        return this.copyright;
+    }
+
+    public set Copyright(value: GraphicalLabel) {
+        this.copyright = value;
     }
 
     public get Cursors(): GraphicalLine[] {
@@ -210,8 +219,9 @@ export class GraphicalMusicSheet {
     }
 
     public findGraphicalMeasure(measureIndex: number, staffIndex: number): GraphicalMeasure {
+        // note the cursor calls this with measureIndex 1 (measure 2) when advancing beyond the end of a 1-measure piece
         for (let i: number = measureIndex; i >= 0; i--) {
-            const gMeasure: GraphicalMeasure = this.measureList[i][staffIndex];
+            const gMeasure: GraphicalMeasure = this.measureList[i]?.[staffIndex];
             if (gMeasure) {
                 return gMeasure;
             }
@@ -397,10 +407,15 @@ export class GraphicalMusicSheet {
      */
     public GetInterpolatedIndexInVerticalContainers(musicTimestamp: Fraction): number {
         const containers: VerticalGraphicalStaffEntryContainer[] = this.verticalGraphicalStaffEntryContainers;
+        if (containers.length === 1) {
+            return 0; // this fixes an error with Noteflight samples, see below (#1473). It may also be faster.
+        }
         let leftIndex: number = 0;
         let rightIndex: number = containers.length - 1;
         let leftTS: Fraction = undefined;
         let rightTS: Fraction = undefined;
+        // TODO AbsoluteTimestamp can be NaN in some erroneous MusicXML files like from Noteflight, see omd issue #1473
+        //   (though in the sample tested, there is only one container, so above containers.length === 1 prevents the error)
         if (musicTimestamp.lte(containers[containers.length - 1].AbsoluteTimestamp)) {
             while (rightIndex - leftIndex > 1) {
                 const middleIndex: number = Math.floor((rightIndex + leftIndex) / 2);
@@ -435,7 +450,7 @@ export class GraphicalMusicSheet {
 
         // estimate the interpolated index
         const foundIndex: number = rightIndex - (diffTS / diff);
-        return Math.min(foundIndex, this.verticalGraphicalStaffEntryContainers.length);
+        return Math.min(foundIndex, this.verticalGraphicalStaffEntryContainers.length - 1);
     }
 
     /**
@@ -483,6 +498,10 @@ export class GraphicalMusicSheet {
         let measureIndex: number = this.measureList.length - 1;
         if (lastRendered) {
             measureIndex = Math.min(measureIndex, this.musicSheet.Rules.MaxMeasureToDrawIndex);
+        }
+        let measure: GraphicalMeasure = this.measureList[measureIndex][staffIndex];
+        while (!measure && measureIndex >= 0) { // check for undefined measures, e.g. multi-measure-rest
+            measure = this.measureList[--measureIndex][staffIndex];
         }
         return this.measureList[measureIndex][staffIndex];
     }
@@ -669,7 +688,8 @@ export class GraphicalMusicSheet {
         // Search for StaffEntries in region
         for (let idx: number = 0, len: number = this.MusicPages.length; idx < len; ++idx) {
             const graphicalMusicPage: GraphicalMusicPage = this.MusicPages[idx];
-            const entries: GraphicalStaffEntry[] = graphicalMusicPage.PositionAndShape.getObjectsInRegion<GraphicalStaffEntry>(region, false);
+            const entries: GraphicalStaffEntry[] = graphicalMusicPage.PositionAndShape.
+                getObjectsInRegion<GraphicalStaffEntry>(region, false, "GraphicalStaffEntry");
             if (!entries || entries.length === 0) {
                 continue;
             } else {

@@ -22,6 +22,13 @@ module.exports = function (config) {
                 pattern: 'test/**/*.ts',
                 included: true
             }, {
+                // exclude Sibelius files, Karma somehow fails to parse them (e.g. test_clef_measure_end_backup_nodes_Sibelius),
+                //   leading to test failure, no tests being executed
+                pattern: 'test/data/*Sibelius*',
+                included: false,
+                watched: false,
+                served: true
+            }, {
                 pattern: 'test/data/*.xml',
                 included: true
             }, {
@@ -98,7 +105,7 @@ module.exports = function (config) {
         autoWatch: false,
 
         // start these browsers
-        browsers: ['ChromeHeadlessNoSandbox'],
+        browsers: ['FirefoxHeadless'],
 
         // For security reasons, Google Chrome is unable to provide sandboxing
         // when it is running in container-based environments (e.g. CI).

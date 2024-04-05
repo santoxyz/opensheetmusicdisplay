@@ -13,6 +13,7 @@ import {Arpeggio} from "./Arpeggio";
 import {NoteType} from "./NoteType";
 import { SourceMeasure } from "./SourceMeasure";
 import { TechnicalInstruction } from "./Instructions";
+import { Glissando } from "../../MusicalScore/VoiceData/Glissando";
 
 /**
  * Represents a single pitch with a duration (length)
@@ -50,6 +51,7 @@ export class Note {
     /** The amount of notes the tuplet of this note (if there is one) replaces. */
     private normalNotes: number;
     private isRestFlag: boolean;
+    public IsWholeMeasureRest: boolean;
     /**
      * The untransposed (!!!) source data.
      */
@@ -64,6 +66,7 @@ export class Note {
     private beam: Beam;
     private tuplet: Tuplet;
     private tie: Tie;
+    private glissando: Glissando;
     private slurs: Slur[] = [];
     private playbackInstrumentId: string = undefined;
     private notehead: Notehead = undefined;
@@ -79,7 +82,7 @@ export class Note {
     /** The number of tremolo strokes this note has (16th tremolo = 2 strokes).
      * Could be a Tremolo object in future when there is more data like tremolo between two notes.
      */
-    private tremoloStrokes: number;
+    public TremoloInfo: TremoloInfo;
     /** Color of the stem given in the XML Stem tag. RGB Hexadecimal, like #00FF00.
      * This is not used for rendering, which takes VoiceEntry.StemColor.
      * It is merely given in the note's stem element in XML and stored here for reference.
@@ -108,6 +111,15 @@ export class Note {
      */
     public NoteToGraphicalNoteObjectId: number; // used with EngravingRules.NoteToGraphicalNoteMap
 
+    public ToStringShort(octaveOffset: number = 0): string {
+        if (!this.Pitch || this.isRest()) {
+            return "rest"; // Pitch is undefined for rest notes
+        }
+        return this.Pitch?.ToStringShort(octaveOffset);
+    }
+    public get ToStringShortGet(): string {
+        return this.ToStringShort(0);
+    }
     public get ParentVoiceEntry(): VoiceEntry {
         return this.voiceEntry;
     }
@@ -168,6 +180,12 @@ export class Note {
     public set NoteTuplet(value: Tuplet) {
         this.tuplet = value;
     }
+    public get NoteGlissando(): Glissando {
+        return this.glissando;
+    }
+    public set NoteGlissando(value: Glissando) {
+        this.glissando = value;
+    }
     public get NoteTie(): Tie {
         return this.tie;
     }
@@ -211,10 +229,7 @@ export class Note {
         this.stemDirectionXml = value;
     }
     public get TremoloStrokes(): number {
-        return this.tremoloStrokes;
-    }
-    public set TremoloStrokes(value: number) {
-        this.tremoloStrokes = value;
+        return this.TremoloInfo?.tremoloStrokes;
     }
     public get StemColorXml(): string {
         return this.stemColorXml;
@@ -254,6 +269,11 @@ export class Note {
         return this.isRest() && this.Length.RealValue === this.sourceMeasure.ActiveTimeSignature.RealValue;
     }
 
+    /** Whether the note fills the whole measure. */
+    public isWholeMeasureNote(): boolean {
+        return this.Length.RealValue === this.sourceMeasure.ActiveTimeSignature.RealValue;
+    }
+
     public ToString(): string {
         if (this.pitch) {
             return this.Pitch.ToString() + ", length: " + this.length.toString();
@@ -267,7 +287,7 @@ export class Note {
             this.sourceMeasure.AbsoluteTimestamp
         );
     }
-    public checkForDoubleSlur(slur: Slur): boolean {
+    public isDuplicateSlur(slur: Slur): boolean {
         for (let idx: number = 0, len: number = this.slurs.length; idx < len; ++idx) {
             const noteSlur: Slur = this.slurs[idx];
             if (
@@ -275,10 +295,14 @@ export class Note {
               noteSlur.EndNote !== undefined &&
               slur.StartNote !== undefined &&
               slur.StartNote === noteSlur.StartNote &&
-              noteSlur.EndNote === this
+              noteSlur.EndNote === this &&
+              slur.PlacementXml === noteSlur.PlacementXml
             ) { return true; }
         }
         return false;
+    }
+    public hasTabEffects(): boolean {
+        return false; // override in TabNote
     }
 }
 
@@ -286,4 +310,11 @@ export enum Appearance {
     Normal,
     Grace,
     Cue
+}
+
+export interface TremoloInfo {
+    tremoloStrokes: number;
+    /** Buzz roll (type="unmeasured" in XML) */
+    tremoloUnmeasured: boolean;
+    // could in future be extended e.g. for tremolo between notes
 }

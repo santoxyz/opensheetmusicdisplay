@@ -3,8 +3,6 @@ import {ArgumentOutOfRangeException} from "../Exceptions";
 import {PointF2D} from "../../Common/DataObjects/PointF2D";
 import {SizeF2D} from "../../Common/DataObjects/SizeF2D";
 import {RectangleF2D} from "../../Common/DataObjects/RectangleF2D";
-import { StaffLineActivitySymbol } from "./StaffLineActivitySymbol";
-import { EngravingRules } from "./EngravingRules";
 import { GraphicalObject } from "./GraphicalObject";
 
 /**
@@ -298,13 +296,26 @@ export class BoundingBox {
     /**
      * This method calculates the BoundingBoxes
      */
-    public calculateBoundingBox(): void {
+    public calculateBoundingBox(ignoreClasses: string[] = []): void {
         if (this.childElements.length === 0) {
             return;
         }
         for (let idx: number = 0, len: number = this.ChildElements.length; idx < len; ++idx) {
             const childElement: BoundingBox = this.ChildElements[idx];
-            childElement.calculateBoundingBox();
+            let calculateChildBbox: boolean = true;
+            for (const classToIgnore of ignoreClasses) {
+                const gObject: GraphicalObject = childElement.DataObject as GraphicalObject;
+                if (gObject.isInstanceOfClass && gObject.isInstanceOfClass(classToIgnore)) {
+                    calculateChildBbox = false;
+                    break;
+                    // measure bbox gets calculated incorrectly, especially with RenderSingleHorizontalStaffline
+                    //   the correct width was previously set via MusicSystemBuilder.setMeasureWidth().
+                }
+            }
+            if (!calculateChildBbox) {
+                continue;
+            }
+            childElement.calculateBoundingBox(ignoreClasses);
         }
 
         // initialize with max/min values
@@ -378,12 +389,7 @@ export class BoundingBox {
         for (let idx: number = 0, len: number = this.ChildElements.length; idx < len; ++idx) {
             const childElement: BoundingBox = this.ChildElements[idx];
             minTop = Math.min(minTop, childElement.relativePosition.y + childElement.borderTop);
-            if (!EngravingRules.FixStafflineBoundingBox || !(childElement.dataObject instanceof StaffLineActivitySymbol)) {
-                maxBottom = Math.max(maxBottom, childElement.relativePosition.y + childElement.borderBottom);
-                // TODO there's a problem with the bottom bounding box of many stafflines, often caused by StaffLineActivitySymbol,
-                // often leading to the page SVG canvas being unnecessarily long in y-direction. This seems to be remedied by this workaround.
-                // see #643
-            }
+            maxBottom = Math.max(maxBottom, childElement.relativePosition.y + childElement.borderBottom);
             minMarginTop = Math.min(minMarginTop, childElement.relativePosition.y + childElement.borderMarginTop);
             maxMarginBottom = Math.max(maxMarginBottom, childElement.relativePosition.y + childElement.borderMarginBottom);
         }
@@ -721,5 +727,6 @@ export enum ColDirEnum {
     Left = 0,
     Right = 1,
     Up = 2,
-    Down = 3
+    Down = 3,
+    NotYetDefined = 4
 }

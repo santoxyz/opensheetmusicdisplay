@@ -17,6 +17,7 @@ import {NoteState} from "./Graphical/DrawingEnums";
 import {Note} from "./VoiceData/Note";
 import {VoiceEntry} from "./VoiceData/VoiceEntry";
 import log from "loglevel";
+import { TextAlignmentEnum } from "../Common/Enums/TextAlignment";
 
 // FIXME Andrea: Commented out some unnecessary/not-ported-yet code, have a look at (*)
 
@@ -42,12 +43,12 @@ export class MusicSheet /*implements ISettableMusicSheet, IComparable<MusicSheet
         this.MusicPartManager = new MusicPartManager(this);
         this.hasBPMInfo = false;
     }
-    public static defaultTitle: string = "[no title given]";
+    public static defaultTitle: string = "defaultTitle";
 
     public userStartTempoInBPM: number;
     public pageWidth: number;
 
-    private idString: string = "random idString, not initialized";
+    private idString: string = "uninitialized";
     private sourceMeasures: SourceMeasure[] = [];
     private repetitions: Repetition[] = [];
     private dynListStaves: DynamicsContainer[][] = [];
@@ -62,6 +63,7 @@ export class MusicSheet /*implements ISettableMusicSheet, IComparable<MusicSheet
     private subtitle: Label;
     private composer: Label;
     private lyricist: Label;
+    private copyright: Label;
     // private languages: Language[] = [];
     // private activeLanguage: Language;
     private musicPartManager: MusicPartManager = undefined;
@@ -197,6 +199,16 @@ export class MusicSheet /*implements ISettableMusicSheet, IComparable<MusicSheet
     public set LyricistString(value: string) {
         this.Lyricist = new Label(value);
     }
+    public get CopyrightString(): string {
+        if (this.copyright) {
+            return this.copyright.text;
+        } else {
+            return "";
+        }
+    }
+    public set CopyrightString(value: string) {
+        this.Copyright = new Label(value, TextAlignmentEnum.CenterBottom, undefined, true);
+    }
     public get Title(): Label {
         return this.title;
     }
@@ -220,6 +232,12 @@ export class MusicSheet /*implements ISettableMusicSheet, IComparable<MusicSheet
     }
     public set Lyricist(value: Label) {
         this.lyricist = value;
+    }
+    public get Copyright(): Label {
+        return this.copyright;
+    }
+    public set Copyright(value: Label) {
+        this.copyright = value;
     }
     public get Rules(): EngravingRules {
         if (!this.rules) {
@@ -477,6 +495,11 @@ export class MusicSheet /*implements ISettableMusicSheet, IComparable<MusicSheet
     public get Transpose(): number {
         return this.transpose;
     }
+    /** Sets the number of halftones for transposition.
+     * E.g. +1 halftone will transpose Eb major to E major.
+     * also see Instrument.Transpose (e.g. osmd.Sheet.Instruments[0].Transpose will additionally transpose this instrument only)
+     * osmd.TransposeCaculator needs to be defined/created for this to take effect. (just set it with new TransposeCalculator())
+     */
     public set Transpose(value: number) {
         this.transpose = value;
     }
