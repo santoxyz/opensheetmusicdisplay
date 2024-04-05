@@ -819,14 +819,16 @@ export class VexFlowMusicSheetCalculator extends MusicSheetCalculator {
 
     let yShift: number = this.rules.MetronomeMarkYShift;
     let hasExpressionsAboveStaffline: boolean = false;
-    for (const expression of metronomeExpression.parentMeasure.TempoExpressions) {
-      const isMetronomeExpression: boolean = expression.InstantaneousTempo?.Enum === TempoEnum.metronomeMark;
-      if (expression.getPlacementOfFirstEntry() === PlacementEnum.Above &&
-          !isMetronomeExpression) {
-        hasExpressionsAboveStaffline = true;
-        break;
-      }
-    }
+    if(metronomeExpression.parentMeasure){
+		for (const expression of metronomeExpression.parentMeasure.TempoExpressions) {
+		  const isMetronomeExpression: boolean = expression.InstantaneousTempo?.Enum === TempoEnum.metronomeMark;
+		  if (expression.getPlacementOfFirstEntry() === PlacementEnum.Above &&
+			  !isMetronomeExpression) {
+			hasExpressionsAboveStaffline = true;
+			break;
+		  }
+		}
+	}
     if (hasExpressionsAboveStaffline) {
       yShift -= 1.4;
       // TODO improve this with proper skyline / collision detection. unfortunately we don't have a skyline here yet.
